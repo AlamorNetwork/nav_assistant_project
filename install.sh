@@ -10,7 +10,31 @@
 print_success() { echo -e "\e[32m$1\e[0m"; }
 print_info() { echo -e "\e[34m$1\e[0m"; }
 print_error() { echo -e "\e[31m$1\e[0m"; }
+update_project() {
+    echo "Updating project from Git repository..."
+    cd "$PROJECT_DIR"
+    
+    # Pull the latest changes from Git
+    git pull origin main
+    if [ $? -ne 0 ]; then
+        echo "Error: 'git pull' failed. Please check for conflicts or connection issues."
+        return 1
+    fi
 
+    echo "Updating Python dependencies..."
+    # Install/update Python packages
+    "$PROJECT_DIR/python_server/venv/bin/pip" install -r "$PROJECT_DIR/python_server/requirements.txt"
+
+    echo "Restarting the service to apply changes..."
+    # Restart the service
+    systemctl restart $SERVICE_NAME
+    
+    echo "Update complete. Checking status..."
+    sleep 2 # Give the service a moment to start
+    systemctl status $SERVICE_NAME
+}
+SERVICE_NAME="nav_assistant.service"
+PROJECT_DIR="/opt/nav_assistant_project"
 # Main installation function
 install_nav_assistant() {
     # --- Step 1: Get user input ---
@@ -110,19 +134,20 @@ show_menu() {
     echo "3. Restart Service"
     echo "4. Stop Service"
     echo "5. Start Service"
+    echo "6. Update Project from Git"
     echo "0. Exit"
     echo "================================="
 }
-
 while true; do
     show_menu
     read -p "Please select an option: " choice
-    case \$choice in
-        1) systemctl status \$SERVICE_NAME ;;
-        2) journalctl -u \$SERVICE_NAME -f ;;
-        3) systemctl restart \$SERVICE_NAME && echo "Service restarted." ;;
-        4) systemctl stop \$SERVICE_NAME && echo "Service stopped." ;;
-        5) systemctl start \$SERVICE_NAME && echo "Service started." ;;
+    case $choice in
+        1) systemctl status $SERVICE_NAME ;;
+        2) journalctl -u $SERVICE_NAME -f ;;
+        3) systemctl restart $SERVICE_NAME && echo "Service restarted." ;;
+        4) systemctl stop $SERVICE_NAME && echo "Service stopped." ;;
+        5) systemctl start $SERVICE_NAME && echo "Service started." ;;
+        6) update_project ;;
         0) break ;;
         *) echo "Invalid option." ;;
     esac

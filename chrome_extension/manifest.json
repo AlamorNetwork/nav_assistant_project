@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "NAV Assistant",
+  "version": "1.0.0",
+  "description": "Smart monitoring and management of investment fund NAV.",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+  "https://navapi.alamornetwork.ir/*"
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

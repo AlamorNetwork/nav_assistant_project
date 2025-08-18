@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # ==============================================================================
-# NAV Assistant Installation Script (Main Installer)
-# This script is designed to be run by a bootstrapper.
+# NAV Assistant - Final Installation Script
+# This one-liner script interactively sets up the entire application stack,
+# cloning the project into the standard /opt directory.
 # ==============================================================================
 
 # Function for colored output
@@ -25,13 +26,13 @@ install_nav_assistant() {
     apt-get update
     apt-get install -y git python3-pip python3-venv nginx certbot python3-certbot-nginx
 
-    # --- Step 3: Set up the Python application ---
-    print_info "\n--- Step 3: Setting up the Python Application ---"
+    # --- Step 3: Set up the Python application in /opt ---
+    print_info "\n--- Step 3: Setting up the Python Application in /opt ---"
     useradd -r -s /bin/false $SERVICE_USER || print_info "User $SERVICE_USER already exists."
     
-    print_info "Cloning the repository..."
-    git clone "$GIT_REPO_URL" "/home/$SERVICE_USER/$PROJECT_DIR"
-    cd "/home/$SERVICE_USER/$PROJECT_DIR/python_server/"
+    print_info "Cloning the repository into /opt/$PROJECT_DIR..."
+    git clone "$GIT_REPO_URL" "/opt/$PROJECT_DIR"
+    cd "/opt/$PROJECT_DIR/python_server/"
     
     print_info "Setting up Python virtual environment and dependencies..."
     python3 -m venv venv
@@ -40,12 +41,14 @@ install_nav_assistant() {
     ./venv/bin/python database_setup.py
     deactivate
     
-    chown -R $SERVICE_USER:$SERVICE_USER "/home/$SERVICE_USER/$PROJECT_DIR"
+    # Change ownership of the entire project directory to the service user
+    chown -R $SERVICE_USER:$SERVICE_USER "/opt/$PROJECT_DIR"
 
     # --- Step 4: Create the Systemd service ---
     print_info "\n--- Step 4: Creating Systemd Service for Uvicorn ---"
-    UVICORN_PATH="/home/$SERVICE_USER/$PROJECT_DIR/python_server/venv/bin/uvicorn"
-    WORKING_DIR="/home/$SERVICE_USER/$PROJECT_DIR/python_server/"
+    # Update paths to point to /opt
+    UVICORN_PATH="/opt/$PROJECT_DIR/python_server/venv/bin/uvicorn"
+    WORKING_DIR="/opt/$PROJECT_DIR/python_server/"
     
     cat > /etc/systemd/system/nav_assistant.service <<EOF
 [Unit]
@@ -84,6 +87,8 @@ server {
     }
 }
 EOF
+    # Remove existing link if it exists, then create a new one
+    rm -f /etc/nginx/sites-enabled/$DOMAIN
     ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
     nginx -t
     certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
@@ -93,7 +98,7 @@ EOF
     print_info "\n--- Step 6: Creating Management Menu ---"
     cat > /usr/local/bin/nav_manager <<EOF
 #!/bin/bash
-# (The management menu code remains the same as before)
+# Management script for the NAV Assistant service
 SERVICE_NAME="nav_assistant.service"
 
 show_menu() {
@@ -127,6 +132,7 @@ EOF
     chmod +x /usr/local/bin/nav_manager
 
     print_success "\n✅ Installation and configuration completed successfully!"
+    print_success "The project is installed in /opt/$PROJECT_DIR"
     print_success "Your service is now available at https://$DOMAIN"
     print_success "To manage the service, run 'sudo nav_manager' at any time."
 }
@@ -142,7 +148,7 @@ case "$1" in
         ;;
     *)
         echo "Invalid command."
-        echo "Usage: ./install.sh install"
+        echo "Usage example: curl ... | sudo bash -s install"
         exit 1
         ;;
 esac

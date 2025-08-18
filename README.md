@@ -25,7 +25,7 @@ A complete platform for real-time monitoring of investment fund NAV, designed to
 This command will run the interactive installation script. It will ask for your domain name and Git repository URL.
 
 ```bash
-curl -sL [https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh](https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) | sudo bash
+sudo bash <(curl -Ls https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) install
 ```
 **Note:** Replace the URL with the raw link to your own `install.sh` script on GitHub.
 
@@ -72,7 +72,7 @@ This will open a menu that allows you to:
 این دستور، اسکریپت نصب تعاملی را اجرا می‌کند. در حین اجرا، نام دامنه و آدرس ریپازیتوری گیت از شما پرسیده خواهد شد.
 
 ```bash
-curl -sL [https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh](https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) | sudo bash
+sudo bash <(curl -Ls https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) install
 ```
 **توجه:** آدرس URL بالا را با لینک خام به فایل `install.sh` خودتان در گیت‌هاب جایگزین کنید.
 

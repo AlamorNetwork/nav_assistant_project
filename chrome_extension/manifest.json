@@ -8,7 +8,7 @@
     "tabs"
   ],
   "host_permissions": [
-  "https://navapi.alamornetwork.ir/*"
+    "https://*.irplatforme.ir/*"
   ],
   "options_page": "options.html",
   "action": {

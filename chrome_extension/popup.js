@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://navapi.alamornetwork.ir';
+const API_BASE_URL = 'https://respina.irplatforme.ir'; // آدرس سرور جدید
 const fundSelector = document.getElementById('fundSelector');
 const statusDiv = document.getElementById('status');
 const startBtn = document.getElementById('setActiveFundBtn');
@@ -17,7 +17,6 @@ async function fetchFunds() {
             fundSelector.appendChild(option);
         });
         
-        // Load the currently active fund
         chrome.storage.sync.get('activeFund', (data) => {
             if (data.activeFund) {
                 fundSelector.value = data.activeFund;

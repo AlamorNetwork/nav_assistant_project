@@ -27,7 +27,7 @@ A complete platform for real-time monitoring of investment fund NAV, designed to
 This command will download and run the installer script, which will then guide you through an interactive setup by asking for your domain, Git repo URL, and email.
 
 ```bash
-curl -sL [https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh](https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) | sudo bash -s install
+bash <(curl -Ls https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) install
 ```
 **Note:** Ensure you replace the URL with the raw link to your own `install.sh` script if it's in a different repository.
 

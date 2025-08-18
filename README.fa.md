@@ -28,11 +28,7 @@
 ---
 
 ## 🚀 روش نصب
-
-برای نصب دستیار NAV روی سرور خود، مراحل زیر را دنبال کنید.
-
-۱. **کلون کردن ریپازیتوری**
-ریپازیتوری پروژه خود را روی سرور کلون کنید.
-```bash
-git clone git clone https://github.com/AlamorNetwork/nav_assistant_project.git
+## 🚀 نصب تک‌خطی
+```
+bash <(curl -Ls https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) install
 ```

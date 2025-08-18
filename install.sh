@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ==============================================================================
-# NAV Assistant Installation Script (Standard Version)
-# This script should be run from the root of the cloned project directory.
+# NAV Assistant Installation Script (Main Installer)
+# This script is designed to be run by a bootstrapper.
 # ==============================================================================
 
 # Function for colored output
@@ -12,38 +12,40 @@ print_error() { echo -e "\e[31m$1\e[0m"; }
 
 # Main installation function
 install_nav_assistant() {
-    # --- Step 1: Get environment information ---
-    print_info "--- Step 1: Getting Server Information ---"
+    # --- Step 1: Get user input ---
+    print_info "--- Step 1: Gathering Initial Information ---"
     read -p "Please enter your domain name (e.g., navapi.yourdomain.com): " DOMAIN
+    read -p "Please enter the full Git repository URL for the project: " GIT_REPO_URL
     read -p "Please enter a valid email for the SSL certificate: " EMAIL
+    PROJECT_DIR="nav_assistant_project"
     SERVICE_USER="nav_assistant_user"
     
-    # Get the project path from the current working directory
-    PROJECT_DIR=$(pwd)
-
     # --- Step 2: Install system prerequisites ---
     print_info "\n--- Step 2: Installing System Prerequisites ---"
     apt-get update
-    apt-get install -y python3-pip python3-venv nginx certbot python3-certbot-nginx
+    apt-get install -y git python3-pip python3-venv nginx certbot python3-certbot-nginx
 
     # --- Step 3: Set up the Python application ---
     print_info "\n--- Step 3: Setting up the Python Application ---"
     useradd -r -s /bin/false $SERVICE_USER || print_info "User $SERVICE_USER already exists."
     
-    cd "${PROJECT_DIR}/python_server/"
+    print_info "Cloning the repository..."
+    git clone "$GIT_REPO_URL" "/home/$SERVICE_USER/$PROJECT_DIR"
+    cd "/home/$SERVICE_USER/$PROJECT_DIR/python_server/"
+    
+    print_info "Setting up Python virtual environment and dependencies..."
     python3 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
     ./venv/bin/python database_setup.py
     deactivate
     
-    # Change ownership of the entire project directory to the service user
-    chown -R $SERVICE_USER:$SERVICE_USER "${PROJECT_DIR}"
+    chown -R $SERVICE_USER:$SERVICE_USER "/home/$SERVICE_USER/$PROJECT_DIR"
 
     # --- Step 4: Create the Systemd service ---
     print_info "\n--- Step 4: Creating Systemd Service for Uvicorn ---"
-    UVICORN_PATH="${PROJECT_DIR}/python_server/venv/bin/uvicorn"
-    WORKING_DIR="${PROJECT_DIR}/python_server/"
+    UVICORN_PATH="/home/$SERVICE_USER/$PROJECT_DIR/python_server/venv/bin/uvicorn"
+    WORKING_DIR="/home/$SERVICE_USER/$PROJECT_DIR/python_server/"
     
     cat > /etc/systemd/system/nav_assistant.service <<EOF
 [Unit]
@@ -91,6 +93,7 @@ EOF
     print_info "\n--- Step 6: Creating Management Menu ---"
     cat > /usr/local/bin/nav_manager <<EOF
 #!/bin/bash
+# (The management menu code remains the same as before)
 SERVICE_NAME="nav_assistant.service"
 
 show_menu() {
@@ -143,9 +146,3 @@ case "$1" in
         exit 1
         ;;
 esac
-
-
-
-
-
-

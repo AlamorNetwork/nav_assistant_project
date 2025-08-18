@@ -23,25 +23,13 @@ A complete platform for real-time monitoring of investment fund NAV, designed to
 
 ## 🚀 Installation
 
-Follow these steps to deploy the NAV Assistant on your server.
+## 🚀 One-Liner Installation
+This command will download and run the installer script, which will then guide you through an interactive setup by asking for your domain, Git repo URL, and email.
 
-1.  **Clone the Repository**
-    Clone your project repository onto the server.
-    ```bash
-    git clone https://github.com/AlamorNetwork/nav_assistant_project.git
-    ```
-
-2.  **Navigate to Project Directory**
-    ```bash
-    cd nav_assistant_project
-    ```
-
-3.  **Run the Installation Script**
-    The script will ask for your domain name and email to configure the web server and SSL certificate.
-    ```bash
-    chmod +x install.sh
-    sudo ./install.sh install
-    ```
+```bash
+curl -sL [https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh](https://raw.githubusercontent.com/AlamorNetwork/nav_assistant_project/main/install.sh) | sudo bash -s install
+```
+**Note:** Ensure you replace the URL with the raw link to your own `install.sh` script if it's in a different repository.
 
 ---
 

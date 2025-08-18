@@ -1,46 +1,49 @@
 #!/bin/bash
 
 # ==============================================================================
-# اسکریپت نصب و مدیریت هوشمند دستیار NAV (نسخه ۲)
+# NAV Assistant Installation Script (Standard Version)
+# This script should be run from the root of the cloned project directory.
 # ==============================================================================
 
-# تابع برای نمایش پیام‌های رنگی
+# Function for colored output
 print_success() { echo -e "\e[32m$1\e[0m"; }
 print_info() { echo -e "\e[34m$1\e[0m"; }
 print_error() { echo -e "\e[31m$1\e[0m"; }
 
-# تابع اصلی برای انجام فرآیند نصب
+# Main installation function
 install_nav_assistant() {
-    # --- مرحله ۱: دریافت اطلاعات از کاربر ---
-    print_info "--- مرحله ۱: دریافت اطلاعات اولیه ---"
-    read -p "لطفاً نام دامنه خود را وارد کنید (مثال: navapi.alamornetwork.ir): " DOMAIN
-    read -p "لطفاً آدرس کامل ریپازیتوری گیت پروژه را وارد کنید: " GIT_REPO_URL
-    read -p "لطفاً یک ایمیل معتبر برای گواهی SSL وارد کنید: " EMAIL
-    read -p "نام پوشه اصلی پروژه چه باشد؟ (پیش‌فرض: nav_assistant_project): " PROJECT_DIR
-    PROJECT_DIR=${PROJECT_DIR:-nav_assistant_project}
+    # --- Step 1: Get environment information ---
+    print_info "--- Step 1: Getting Server Information ---"
+    read -p "Please enter your domain name (e.g., navapi.yourdomain.com): " DOMAIN
+    read -p "Please enter a valid email for the SSL certificate: " EMAIL
     SERVICE_USER="nav_assistant_user"
+    
+    # Get the project path from the current working directory
+    PROJECT_DIR=$(pwd)
 
-    # --- مرحله ۲: نصب پیش‌نیازها ---
-    print_info "\n--- مرحله ۲: نصب پیش‌نیازهای سیستمی ---"
+    # --- Step 2: Install system prerequisites ---
+    print_info "\n--- Step 2: Installing System Prerequisites ---"
     apt-get update
-    apt-get install -y git python3-pip python3-venv nginx certbot python3-certbot-nginx
+    apt-get install -y python3-pip python3-venv nginx certbot python3-certbot-nginx
 
-    # --- مرحله ۳: کلون کردن پروژه و راه‌اندازی برنامه پایتون ---
-    print_info "\n--- مرحله ۳: راه‌اندازی برنامه پایتون ---"
-    useradd -r -s /bin/false $SERVICE_USER || print_info "کاربر $SERVICE_USER از قبل وجود دارد."
-    git clone "$GIT_REPO_URL" "/home/$SERVICE_USER/$PROJECT_DIR"
-    cd "/home/$SERVICE_USER/$PROJECT_DIR/python_server/"
+    # --- Step 3: Set up the Python application ---
+    print_info "\n--- Step 3: Setting up the Python Application ---"
+    useradd -r -s /bin/false $SERVICE_USER || print_info "User $SERVICE_USER already exists."
+    
+    cd "${PROJECT_DIR}/python_server/"
     python3 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
     ./venv/bin/python database_setup.py
-    chown -R $SERVICE_USER:$SERVICE_USER "/home/$SERVICE_USER/$PROJECT_DIR"
     deactivate
+    
+    # Change ownership of the entire project directory to the service user
+    chown -R $SERVICE_USER:$SERVICE_USER "${PROJECT_DIR}"
 
-    # --- مرحله ۴: ساخت سرویس Systemd ---
-    print_info "\n--- مرحله ۴: ساخت سرویس Systemd برای Uvicorn ---"
-    UVICORN_PATH="/home/$SERVICE_USER/$PROJECT_DIR/python_server/venv/bin/uvicorn"
-    WORKING_DIR="/home/$SERVICE_USER/$PROJECT_DIR/python_server/"
+    # --- Step 4: Create the Systemd service ---
+    print_info "\n--- Step 4: Creating Systemd Service for Uvicorn ---"
+    UVICORN_PATH="${PROJECT_DIR}/python_server/venv/bin/uvicorn"
+    WORKING_DIR="${PROJECT_DIR}/python_server/"
     
     cat > /etc/systemd/system/nav_assistant.service <<EOF
 [Unit]
@@ -63,8 +66,8 @@ EOF
     systemctl enable nav_assistant.service
     systemctl start nav_assistant.service
 
-    # --- مرحله ۵: پیکربندی Nginx ---
-    print_info "\n--- مرحله ۵: پیکربندی Nginx به عنوان Reverse Proxy ---"
+    # --- Step 5: Configure Nginx and get SSL certificate ---
+    print_info "\n--- Step 5: Configuring Nginx and getting SSL Certificate ---"
     cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -81,70 +84,68 @@ server {
 EOF
     ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
     nginx -t
-
-    # --- مرحله ۶: دریافت گواهی SSL ---
-    print_info "\n--- مرحله ۶: دریافت گواهی SSL با Certbot ---"
-    systemctl stop nginx
     certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
-    systemctl start nginx
+    systemctl restart nginx
 
-    # --- مرحله ۷: ساخت اسکریپت مدیریتی ---
-    print_info "\n--- مرحله ۷: ساخت منوی مدیریتی ---"
+    # --- Step 6: Create the management script ---
+    print_info "\n--- Step 6: Creating Management Menu ---"
     cat > /usr/local/bin/nav_manager <<EOF
 #!/bin/bash
 SERVICE_NAME="nav_assistant.service"
 
 show_menu() {
     echo "================================="
-    echo "    منوی مدیریت دستیار NAV"
+    echo "    NAV Assistant Management Menu"
     echo "================================="
-    echo "1. نمایش وضعیت سرویس (Status)"
-    echo "2. نمایش لاگ‌های زنده (Logs)"
-    echo "3. ری‌استارت سرویس (Restart)"
-    echo "4. متوقف کردن سرویس (Stop)"
-    echo "5. شروع سرویس (Start)"
-    echo "0. خروج"
+    echo "1. Check Service Status"
+    echo "2. View Live Logs"
+    echo "3. Restart Service"
+    echo "4. Stop Service"
+    echo "5. Start Service"
+    echo "0. Exit"
     echo "================================="
 }
 
 while true; do
     show_menu
-    read -p "لطفاً یک گزینه را انتخاب کنید: " choice
+    read -p "Please select an option: " choice
     case \$choice in
         1) systemctl status \$SERVICE_NAME ;;
         2) journalctl -u \$SERVICE_NAME -f ;;
-        3) systemctl restart \$SERVICE_NAME && echo "سرویس ری‌استارت شد." ;;
-        4) systemctl stop \$SERVICE_NAME && echo "سرویس متوقف شد." ;;
-        5) systemctl start \$SERVICE_NAME && echo "سرویس شروع شد." ;;
+        3) systemctl restart \$SERVICE_NAME && echo "Service restarted." ;;
+        4) systemctl stop \$SERVICE_NAME && echo "Service stopped." ;;
+        5) systemctl start \$SERVICE_NAME && echo "Service started." ;;
         0) break ;;
-        *) echo "گزینه نامعتبر است." ;;
+        *) echo "Invalid option." ;;
     esac
-    read -p "برای بازگشت به منو، کلید Enter را بزنید..."
+    read -p "Press Enter to return to the menu..."
 done
 EOF
     chmod +x /usr/local/bin/nav_manager
 
-    # --- پایان ---
-    print_success "\n✅ نصب و پیکربندی با موفقیت به پایان رسید!"
-    print_success "سرویس شما اکنون روی آدرس https://$DOMAIN در دسترس است."
-    print_success "برای مدیریت سرویس، در هر زمان دستور 'sudo nav_manager' را در ترمینال وارد کنید."
+    print_success "\n✅ Installation and configuration completed successfully!"
+    print_success "Your service is now available at https://$DOMAIN"
+    print_success "To manage the service, run 'sudo nav_manager' at any time."
 }
 
-# --- منطق اصلی اجرای اسکریپت ---
-# این بخش بررسی می‌کند که آیا آرگومان ورودی 'install' است یا نه
+# --- Main script logic ---
 case "$1" in
     install)
-        # بررسی اجرای اسکریپت با دسترسی root
         if [[ $EUID -ne 0 ]]; then
-           print_error "این دستور باید با دسترسی root یا sudo اجرا شود." 
+           print_error "This script must be run as root or with sudo." 
            exit 1
         fi
         install_nav_assistant
         ;;
     *)
-        echo "دستور نامعتبر است."
-        echo "برای نصب، از دستور زیر استفاده کنید:"
-        echo "sudo bash <(curl -Ls ...) install"
+        echo "Invalid command."
+        echo "Usage: ./install.sh install"
         exit 1
         ;;
 esac
+
+
+
+
+
+

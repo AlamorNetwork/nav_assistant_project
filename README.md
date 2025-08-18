@@ -28,7 +28,7 @@ Follow these steps to deploy the NAV Assistant on your server.
 1.  **Clone the Repository**
     Clone your project repository onto the server.
     ```bash
-    git clone [https://github.com/AlamorNetwork/nav_assistant_project.git](https://github.com/AlamorNetwork/nav_assistant_project.git)
+    git clone https://github.com/AlamorNetwork/nav_assistant_project.git
     ```
 
 2.  **Navigate to Project Directory**

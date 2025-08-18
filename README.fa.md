@@ -34,4 +34,5 @@
 ۱. **کلون کردن ریپازیتوری**
 ریپازیتوری پروژه خود را روی سرور کلون کنید.
 ```bash
-git clone [https://github.com/AlamorNetwork/nav_assistant_project.git](https://github.com/AlamorNetwork/nav_assistant_project.git)
+git clone git clone https://github.com/AlamorNetwork/nav_assistant_project.git
+```

@@ -5,7 +5,8 @@
   "description": "Smart monitoring and management of investment fund NAV.",
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.irplatforme.ir/*"

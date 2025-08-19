@@ -67,6 +67,11 @@ class CheckData(BaseModel):
     fund_name: str; nav_on_page: float; total_units: float
     sellable_quantity: Optional[float] = None; expert_price: Optional[float] = None
 
+class StaleAlert(BaseModel):
+    fund_name: str
+    last_nav_time: str
+    age_seconds: float
+
 # --- API Endpoints ---
 @app.get("/")
 def read_root(): return {"status": "ok", "message": "NAV Assistant API is running"}
@@ -177,3 +182,13 @@ async def check_nav_logic(data: CheckData):
         "tolerance": tolerance,
         "board_price": board_price,
     }
+
+@app.post("/alerts/stale")
+async def alert_stale_nav(alert: StaleAlert):
+    message = (
+        f"🚨 *NAV لحظه‌ای بروزرسانی نشده*") + \
+        (f"\nصندوق: {alert.fund_name}" if alert.fund_name else "") + \
+        (f"\nآخرین زمان روی صفحه: {alert.last_nav_time}" if alert.last_nav_time else "") + \
+        (f"\nسن تاخیر (ثانیه): {int(alert.age_seconds)}" if alert.age_seconds is not None else "")
+    await send_telegram_alert(message)
+    return {"status": "ok"}

@@ -2,6 +2,7 @@ const API_BASE_URL = 'https://respina.irplatforme.ir';
 const TEST_MODE = true; // برای فعال/غیرفعال کردن حالت تست، این خط را تغییر دهید
 const MAX_PERSISTED_LOGS = 500;
 let monitoringInterval = null;
+let monitoringIntervalMs = 120000; // 2m inside market hours
 
 // --- Helper Functions ---
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -37,6 +38,11 @@ function areUrlsMatching(currentUrl, configuredUrl) {
     return currentUrl.split('?')[0] === configuredUrl.split('?')[0];
 }
 
+function isMarketOpen(now = new Date()) {
+    const hour = now.getHours();
+    return hour >= 9 && hour < 15; // 9:00 <= t < 15:00 local time
+}
+
 // --- UI Functions (askForSecurity, showNotification) ---
 // These functions remain unchanged from the previous correct version.
 function askForSecurity(securities, callback) {
@@ -65,7 +71,7 @@ function askForSecurity(securities, callback) {
     };
 }
 
-function showNotification(options) {
+async function showNotification(options) {
     document.getElementById('nav-assistant-notification')?.remove();
     const box = document.createElement('div');
     box.id = 'nav-assistant-notification';
@@ -84,7 +90,18 @@ function showNotification(options) {
     }
     box.querySelector('.close-btn').onclick = () => box.remove();
     document.body.appendChild(box);
-    if (options.buttons) { options.buttons.forEach(btn => { document.getElementById(btn.id).onclick = () => { box.remove(); btn.callback(); }; }); }
+    if (options.persistent) {
+        try { await chrome.storage.local.set({ last_notification: options }); } catch {}
+    }
+    if (options.buttons) {
+        options.buttons.forEach(btn => {
+            document.getElementById(btn.id).onclick = async () => {
+                box.remove();
+                try { await chrome.storage.local.remove('last_notification'); } catch {}
+                btn.callback();
+            };
+        });
+    }
 }
 
 
@@ -110,8 +127,8 @@ async function performCheck() {
     if (selectedSecurityIndex === undefined) {
         log("وضعیت: راه‌اندازی اولیه.");
         if (!areUrlsMatching(window.location.href, config.expert_price_page_url)) {
-            log(`در صفحه اشتباه. در حال انتقال به صفحه قیمت کارشناسی...`);
-            window.location.href = config.expert_price_page_url;
+            log(`در صفحه اشتباه. باز کردن تب جدید قیمت کارشناسی...`);
+            try { window.open(config.expert_price_page_url, '_blank'); } catch {}
             return;
         }
         if (!localState.listExpanded) {
@@ -172,13 +189,82 @@ async function performCheck() {
             });
             const result = await response.json();
             log(`پاسخ سرور (اولیه): ${result.status}`);
+
+            // --- Staleness check: تاریخ/زمان NAV لحظه‌ای ---
+            try {
+                const dateEl = config.date_selector ? document.querySelector(config.date_selector) : null;
+                const timeEl = config.time_selector ? document.querySelector(config.time_selector) : null;
+                const dateText = dateEl ? (dateEl.innerText || dateEl.textContent || '').trim() : '';
+                const timeText = timeEl ? (timeEl.innerText || timeEl.textContent || '').trim() : '';
+                if (dateText || timeText) {
+                    const now = new Date();
+                    // تلاش برای پارس زمان به صورت HH:mm یا HH:mm:ss
+                    const timeMatch = timeText.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                    let last = new Date(now);
+                    if (timeMatch) {
+                        const h = parseInt(timeMatch[1]);
+                        const m = parseInt(timeMatch[2]);
+                        const s = timeMatch[3] ? parseInt(timeMatch[3]) : 0;
+                        last.setHours(h, m, s, 0);
+                    }
+                    // اگر تاریخ به‌صورت امروز/شمسی یا متن دیگر است، حداقل زمان را می‌سنجیم
+                    const ageSeconds = Math.max(0, Math.floor((now.getTime() - last.getTime()) / 1000));
+                    const marketOpen = isMarketOpen(now);
+                    if (!marketOpen) {
+                        log('خارج از ساعات بازار هستیم. چک لحظه‌ای غیرفعال است.', 'warn');
+                    }
+                    if (marketOpen && ageSeconds >= 120) {
+                        log(`NAV لحظه‌ای به‌روزرسانی نشده. تاخیر: ${ageSeconds} ثانیه.`, 'warn');
+                        // جلوگیری از اسپم: هر 5 دقیقه یک‌بار هشدار ارسال شود
+                        const { last_stale_alert_ts } = await chrome.storage.local.get('last_stale_alert_ts');
+                        const nowTs = Date.now();
+                        const shouldAlert = !last_stale_alert_ts || (nowTs - last_stale_alert_ts) > 5 * 60 * 1000;
+                        if (shouldAlert) {
+                            try { await fetch(`${API_BASE_URL}/alerts/stale`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fund_name: activeFund, last_nav_time: `${dateText} ${timeText}`.trim(), age_seconds: ageSeconds }) }); } catch {}
+                            await chrome.storage.local.set({ last_stale_alert_ts: nowTs });
+                        }
+                        await showNotification({
+                            title: '🚨 تاخیر در NAV لحظه‌ای',
+                            message: `بروزرسانی NAV بیش از 2 دقیقه تاخیر دارد (${ageSeconds}s).`,
+                            type: 'error',
+                            persistent: true,
+                            buttons: [
+                                { id: 'recheck-btn', text: 'رفرش و چک مجدد', callback: () => { location.reload(); } }
+                            ]
+                        });
+                    }
+                }
+            } catch (e) { log(`Stale check error: ${e.message}`, 'warn'); }
             
             if (result.status === 'adjustment_needed_more_data_required') {
                 // در حالت تست، همان مقدار تغییر یافته را نگه می‌داریم تا مرحله دوم هم نیاز به تعدیل بدهد
                 await chrome.storage.local.set({ navCheckData: { nav_on_page: navOnPage, total_units: totalUnits }, needsExpertData: true });
                 log("نیاز به تعدیل. در حال انتقال...");
-                window.location.href = config.expert_price_page_url;
+                // صفحه NAV را باز نگه می‌داریم و صفحه قیمت کارشناسی را در تب جدید باز می‌کنیم
+                try { window.open(config.expert_price_page_url, '_blank'); } catch {}
             }
+
+            // اگر کاربر «تعدیل زدم» زده باشد، بعد از موعد 2 دقیقه‌ای باید صحت اختلاف با تابلو را تایید کنیم
+            try {
+                const { postAdjustmentActive, postAdjustmentCheckDueAt } = await chrome.storage.local.get(['postAdjustmentActive', 'postAdjustmentCheckDueAt']);
+                if (postAdjustmentActive && typeof postAdjustmentCheckDueAt === 'number' && Date.now() >= postAdjustmentCheckDueAt) {
+                    log('شروع بررسی پس از تعدیل (post-adjustment)...', 'warn');
+                    // درخواست دوباره به سرور: انتظار داریم diff <= tolerance باشد
+                    const verifyResp = await fetch(`${API_BASE_URL}/check-nav`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fund_name: activeFund, nav_on_page: navOnPage, total_units: totalUnits })
+                    });
+                    const verify = await verifyResp.json();
+                    if (verify.status === 'ok') {
+                        await chrome.storage.local.set({ postAdjustmentActive: false, postAdjustmentCheckDueAt: 0 });
+                        await showNotification({ title: '✅ بررسی پس از تعدیل موفق بود', message: `مغایرت در تلورانس (${verify.diff})`, type: 'success', persistent: true });
+                        log('بررسی پس از تعدیل موفق بود.', 'success');
+                    } else {
+                        await showNotification({ title: '⚠️ مغایرت پس از تعدیل باقی است', message: `وضعیت: ${verify.status}`, type: 'error', persistent: true });
+                        log('مغایرت پس از تعدیل باقی است.', 'error');
+                    }
+                }
+            } catch (e) { log(`Post-adjustment check error: ${e.message}`, 'warn'); }
         }
     } 
     // --- Data Gathering Logic ---
@@ -265,6 +351,7 @@ async function performCheck() {
                 title: '🚨 نیاز به تعدیل NAV',
                 message: `قیمت پیشنهادی جدید: ${finalResult.suggested_nav}`,
                 type: 'error',
+                persistent: true,
                 buttons: [
                     {
                         id: 'recheck-btn',
@@ -284,8 +371,27 @@ async function performCheck() {
 async function startMonitoring() {
     await sleep(2000);
     if (monitoringInterval) clearInterval(monitoringInterval);
+    // بازیابی نوتیف ذخیره‌شده (اگر قبلاً کاربر ندیده باشد)
+    try {
+        const stored = await chrome.storage.local.get('last_notification');
+        if (stored.last_notification) {
+            await showNotification(stored.last_notification);
+        }
+    } catch {}
+    // نرخ پایش تابع ساعات بازار است
+    const now = new Date();
+    monitoringIntervalMs = isMarketOpen(now) ? 120000 : 600000; // 2m داخل بازار، 10m خارج بازار
     performCheck();
-    monitoringInterval = setInterval(performCheck, 120000); // 2 minutes
+    monitoringInterval = setInterval(() => {
+        const t = new Date();
+        const desired = isMarketOpen(t) ? 120000 : 600000;
+        if (desired !== monitoringIntervalMs) {
+            monitoringIntervalMs = desired;
+            clearInterval(monitoringInterval);
+            monitoringInterval = setInterval(performCheck, monitoringIntervalMs);
+        }
+        performCheck();
+    }, monitoringIntervalMs);
     log("نظارت ربات شروع شد.", 'success');
 }
 
@@ -296,4 +402,10 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
         log("صندوق فعال تغییر کرد. در حال ری‌استارت ربات...", 'warn');
         chrome.storage.local.clear(() => { startMonitoring(); });
     }
+});
+
+// شنونده برای نمایش مجدد اعلان ذخیره‌شده از پاپ‌آپ
+window.addEventListener('NAV_ASSISTANT_SHOW_NOTIFICATION', async (e) => {
+    const opts = e.detail || {};
+    await showNotification({ ...(opts || {}), persistent: true });
 });

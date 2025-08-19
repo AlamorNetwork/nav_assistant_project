@@ -6,6 +6,9 @@ const stopBtn = document.getElementById('stopBotBtn');
 const resetBtn = document.getElementById('resetFundBtn');
 const logBox = document.getElementById('log-box');
 const clearLogBtn = document.getElementById('clearLogBtn');
+const confirmAdjustedBtn = document.getElementById('confirmAdjustedBtn');
+const showLastNotifBtn = document.getElementById('showLastNotifBtn');
+const adjustmentStatus = document.getElementById('adjustmentStatus');
 
 // --- مدیریت لاگ ---
 function renderLogEntry(entry) {
@@ -34,6 +37,8 @@ async function clearLogs() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'LOG_MESSAGE') {
         addLog(request.payload.message, request.payload.type);
+    } else if (request.type === 'OPEN_NEW_TAB') {
+        chrome.tabs.create({ url: request.url, active: true });
     }
 });
 
@@ -116,8 +121,51 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchFunds();
     loadPersistedLogs();
     addLog('پنجره باز شد. در حال گوش دادن به لاگ‌ها...');
+    chrome.storage.local.get('last_notification', (data) => {
+        if (data.last_notification) {
+            adjustmentStatus.textContent = data.last_notification.message ? data.last_notification.message : 'اعلان آماده نمایش است';
+        } else {
+            adjustmentStatus.textContent = '-';
+        }
+    });
 });
 startBtn.addEventListener('click', setActiveFund);
 stopBtn.addEventListener('click', stopBot);
 resetBtn.addEventListener('click', resetFund);
 clearLogBtn.addEventListener('click', clearLogs);
+
+confirmAdjustedBtn?.addEventListener('click', async () => {
+    try {
+        const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
+        if (!activeFund) { addLog('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
+        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`);
+        if (!response.ok) throw new Error('Could not get config for recheck.');
+        const config = await response.json();
+        const dueAt = Date.now() + 2 * 60 * 1000; // 2 minutes later
+        await new Promise(resolve => chrome.storage.local.set({ postAdjustmentActive: true, postAdjustmentCheckDueAt: dueAt }, resolve));
+        await new Promise(resolve => chrome.storage.local.remove(['last_notification', 'needsExpertData', 'navSearchClicked'], resolve));
+        adjustmentStatus.textContent = '-';
+        chrome.tabs.create({ url: config.nav_page_url, active: true });
+        addLog('کاربر تایید کرد که تعدیل انجام شده. در حال چک مجدد...', 'success');
+    } catch (e) {
+        addLog(e.message || 'خطا در شروع بررسی مجدد.', 'error');
+    }
+});
+
+showLastNotifBtn?.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id;
+        if (!tabId) return;
+        chrome.storage.local.get('last_notification', (data) => {
+            if (!data.last_notification) { addLog('اعلان ذخیره‌شده‌ای وجود ندارد.'); return; }
+            chrome.scripting.executeScript({
+                target: { tabId },
+                func: (opts) => {
+                    const ev = new CustomEvent('NAV_ASSISTANT_SHOW_NOTIFICATION', { detail: opts });
+                    window.dispatchEvent(ev);
+                },
+                args: [data.last_notification]
+            });
+        });
+    });
+});

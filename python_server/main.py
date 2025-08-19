@@ -29,7 +29,8 @@ async def send_telegram_alert(message: str):
 # --- TSETMC Price Fetching Logic ---
 async def get_board_price(fund_name: str) -> float:
     headers = {'User-Agent': 'Mozilla/5.0'}
-    async with httpx.AsyncClient() as client:
+    # *** BUG FIX ***: Added follow_redirects=True to handle HTTP to HTTPS redirects
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
             search_url = f"http://old.tsetmc.com/tsev2/data/search.aspx?skey={fund_name}"
             search_response = await client.get(search_url, headers=headers)
@@ -109,7 +110,6 @@ def get_configuration(fund_name: str):
 async def check_nav_logic(data: CheckData):
     conn = get_db_connection()
     
-    # *** BUG FIX ***: Removed 'await' from the call to the synchronous function
     config = get_configuration(data.fund_name)
     
     fund_id = config['fund_id']

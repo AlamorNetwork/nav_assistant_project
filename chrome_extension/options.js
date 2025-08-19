@@ -7,6 +7,10 @@ const testModeToggle = document.getElementById('testModeToggle');
 const newFundType = document.getElementById('newFundType');
 const templateSelector = document.getElementById('templateSelector');
 const applyTemplateBtn = document.getElementById('applyTemplateBtn');
+const loginBtn = document.getElementById('loginBtn');
+const loginUsername = document.getElementById('loginUsername');
+const loginPassword = document.getElementById('loginPassword');
+const loginStatus = document.getElementById('loginStatus');
 
 async function testServerConnection() {
     connectionStatusSpan.textContent = '⏳ در حال تست...';
@@ -61,8 +65,10 @@ async function addFund() {
     const type = newFundType.value || 'rayan';
     if (!name || !symbol) { updateStatus('نام و شناسه صندوق الزامی است.', 'error'); return; }
     try {
+        const stored = await chrome.storage.sync.get('authToken');
+        const token = stored.authToken || '';
         const response = await fetch(`${API_BASE_URL}/funds`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'token': token },
             body: JSON.stringify({ name: name, api_symbol: symbol, type }),
         });
         const result = await response.json();
@@ -95,8 +101,10 @@ async function saveConfiguration() {
         expert_search_button_selector: document.getElementById('expertSearchBtnSelector').value,
     };
     try {
+        const stored = await chrome.storage.sync.get('authToken');
+        const token = stored.authToken || '';
         const response = await fetch(`${API_BASE_URL}/configurations`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'token': token },
             body: JSON.stringify(configData),
         });
         const result = await response.json();
@@ -178,3 +186,24 @@ document.getElementById('saveConfigBtn').addEventListener('click', saveConfigura
 fundSelector.addEventListener('change', loadConfigurationForSelectedFund);
 document.addEventListener('DOMContentLoaded', fetchTemplates);
 applyTemplateBtn.addEventListener('click', applySelectedTemplate);
+
+async function login() {
+    loginStatus.textContent = '⏳';
+    try {
+        const response = await fetch(`${API_BASE_URL}/auth/login`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: loginUsername.value, password: loginPassword.value })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Login failed');
+        await chrome.storage.sync.set({ authToken: result.token, authUser: { username: result.username, role: result.role } });
+        loginStatus.textContent = '✅ ورود موفق';
+        loginStatus.style.color = 'var(--success-color)';
+    } catch (e) {
+        loginStatus.textContent = '❌';
+        loginStatus.style.color = 'var(--error-color)';
+        updateStatus(e.message, 'error');
+    }
+}
+
+loginBtn.addEventListener('click', login);

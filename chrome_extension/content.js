@@ -1,13 +1,26 @@
 const API_BASE_URL = 'https://respina.irplatforme.ir';
 const TEST_MODE = true; // برای فعال/غیرفعال کردن حالت تست، این خط را تغییر دهید
+const MAX_PERSISTED_LOGS = 500;
 let monitoringInterval = null;
 
 // --- Helper Functions ---
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-function log(message, type = 'info') {
+async function log(message, type = 'info') {
+    const entry = { message, type, timestamp: Date.now(), url: window.location.href };
     console.log(`[${type.toUpperCase()}] ${message}`);
-    chrome.runtime.sendMessage({ type: 'LOG_MESSAGE', payload: { message, type } });
+    try {
+        chrome.runtime.sendMessage({ type: 'LOG_MESSAGE', payload: entry });
+    } catch {}
+    try {
+        const stored = await chrome.storage.local.get('nav_logs');
+        const logs = Array.isArray(stored.nav_logs) ? stored.nav_logs : [];
+        logs.push(entry);
+        if (logs.length > MAX_PERSISTED_LOGS) {
+            logs.splice(0, logs.length - MAX_PERSISTED_LOGS);
+        }
+        await chrome.storage.local.set({ nav_logs: logs });
+    } catch {}
 }
 
 function readElementValue(selector, parentElement = document) {
@@ -172,26 +185,58 @@ async function performCheck() {
     else if (areUrlsMatching(window.location.href, config.expert_price_page_url)) {
         if (localState.needsExpertData) {
             log("در صفحه قیمت کارشناسی برای جمع‌آوری داده نهایی.");
-            await chrome.storage.local.set({ needsExpertData: false });
 
-            // صبر برای لود شدن جدول و در صورت نیاز تلاش برای افزایش ردیف‌ها و جستجو
+            // 1) همیشه قبل از خواندن، تعداد ردیف‌ها را زیاد و جستجو را کلیک کن
+            const increaseRowsInput = document.querySelector(config.increase_rows_selector);
+            const expertSearchButton = document.querySelector(config.expert_search_button_selector);
+            if (increaseRowsInput) {
+                increaseRowsInput.value = '';
+                increaseRowsInput.value = 1000;
+                try { increaseRowsInput.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+                try { increaseRowsInput.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+                log("افزایش تعداد ردیف‌ها به 1000.");
+            }
+            if (expertSearchButton) {
+                log("کلیک روی دکمه جستجوی قیمت کارشناسی.");
+                try { expertSearchButton.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+                try { expertSearchButton.click(); } catch {}
+                try {
+                    const form = expertSearchButton.closest('form');
+                    if (form && form.requestSubmit) { form.requestSubmit(); }
+                } catch {}
+                try {
+                    const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                    expertSearchButton.dispatchEvent(evt);
+                } catch {}
+            } else {
+                log("دکمه جستجوی قیمت کارشناسی پیدا نشد.", 'warn');
+            }
+
+            // 2) صبر و تلاش برای بارگذاری لیست
             let attempts = 0;
             let allSecurityElements = document.querySelectorAll(config.securities_list_selector);
-            while (attempts < 20 && allSecurityElements.length === 0) {
+            while (attempts < 40 && allSecurityElements.length === 0) {
                 await sleep(500);
                 allSecurityElements = document.querySelectorAll(config.securities_list_selector);
                 attempts++;
             }
+            log(`تعداد اوراق یافت‌شده: ${allSecurityElements.length}. ایندکس انتخابی: ${selectedSecurityIndex}`);
             if (allSecurityElements.length === 0) {
-                const increaseRowsInput = document.querySelector(config.increase_rows_selector);
-                const expertSearchButton = document.querySelector(config.expert_search_button_selector);
-                if (increaseRowsInput) { increaseRowsInput.value = ''; increaseRowsInput.value = 1000; }
-                if (expertSearchButton) { expertSearchButton.click(); }
-                await sleep(1000);
-                allSecurityElements = document.querySelectorAll(config.securities_list_selector);
+                log("لیست اوراق پس از تلاش اول خالی ماند. تلاش مجدد برای کلیک/سابمیت...", 'warn');
+                if (expertSearchButton) {
+                    try { expertSearchButton.click(); } catch {}
+                    try { const form = expertSearchButton.closest('form'); if (form && form.requestSubmit) { form.requestSubmit(); } } catch {}
+                }
+                let retry = 0;
+                while (retry < 20 && allSecurityElements.length === 0) {
+                    await sleep(500);
+                    allSecurityElements = document.querySelectorAll(config.securities_list_selector);
+                    retry++;
+                }
+                if (allSecurityElements.length === 0) { log("لیست اوراق پس از تلاش مجدد هم خالی است.", 'error'); return; }
             }
 
-            log(`تعداد اوراق یافت‌شده: ${allSecurityElements.length}. ایندکس انتخابی: ${selectedSecurityIndex}`);
+            // 3) خواندن از ردیف انتخابی
             const selectedElement = allSecurityElements[selectedSecurityIndex];
             if (!selectedElement) { log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود.`, 'error'); return; }
             const selectedRow = selectedElement.closest('tr');
@@ -201,6 +246,7 @@ async function performCheck() {
             log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
             if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
 
+            // 4) ارسال به سرور
             const finalResponse = await fetch(`${API_BASE_URL}/check-nav`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -211,6 +257,9 @@ async function performCheck() {
             });
             const finalResult = await finalResponse.json();
             log(`پاسخ نهایی سرور: ${finalResult.suggested_nav}`, 'success');
+
+            // 5) پس از موفقیت، فلگ را خاموش کن تا در رفرش‌های بعدی دوباره اجرا نشود
+            await chrome.storage.local.set({ needsExpertData: false });
 
             showNotification({
                 title: '🚨 نیاز به تعدیل NAV',

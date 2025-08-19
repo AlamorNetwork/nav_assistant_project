@@ -8,19 +8,24 @@ const logBox = document.getElementById('log-box');
 const clearLogBtn = document.getElementById('clearLogBtn');
 
 // --- مدیریت لاگ ---
-function addLog(message, type = 'info') {
+function renderLogEntry(entry) {
     if (!logBox) return;
-    const entry = document.createElement('p');
-    entry.className = `log-entry ${type}`;
-    const time = new Date().toLocaleTimeString();
-    entry.textContent = `[${time}] ${message}`;
-    logBox.appendChild(entry);
-    logBox.scrollTop = logBox.scrollHeight; // اسکرول خودکار به پایین
+    const row = document.createElement('p');
+    row.className = `log-entry ${entry.type || 'info'}`;
+    const time = new Date(entry.timestamp || Date.now()).toLocaleTimeString();
+    row.textContent = `[${time}] ${entry.message}`;
+    logBox.appendChild(row);
 }
 
-function clearLogs() {
+async function addLog(message, type = 'info') {
+    renderLogEntry({ message, type, timestamp: Date.now() });
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+async function clearLogs() {
     if (logBox) {
         logBox.innerHTML = '';
+        await new Promise(resolve => chrome.storage.local.set({ nav_logs: [] }, resolve));
         addLog('لاگ‌ها پاک شدند.');
     }
 }
@@ -97,8 +102,19 @@ function updateStatus(message, type) {
 }
 
 // --- Event Listeners ---
+async function loadPersistedLogs() {
+    try {
+        const stored = await new Promise(resolve => chrome.storage.local.get('nav_logs', resolve));
+        const logs = Array.isArray(stored.nav_logs) ? stored.nav_logs : [];
+        logBox.innerHTML = '';
+        logs.forEach(renderLogEntry);
+        logBox.scrollTop = logBox.scrollHeight;
+    } catch {}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     fetchFunds();
+    loadPersistedLogs();
     addLog('پنجره باز شد. در حال گوش دادن به لاگ‌ها...');
 });
 startBtn.addEventListener('click', setActiveFund);

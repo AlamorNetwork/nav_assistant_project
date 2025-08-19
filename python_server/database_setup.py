@@ -76,7 +76,11 @@ CREATE TABLE IF NOT EXISTS users (
 )
 ''')
 
-# Add owner_user_id to funds if not exists (best-effort)
+# Add missing columns to funds if not exists (best-effort)
+try:
+    cursor.execute("ALTER TABLE funds ADD COLUMN type TEXT DEFAULT 'rayan'")
+except Exception:
+    pass
 try:
     cursor.execute('ALTER TABLE funds ADD COLUMN owner_user_id INTEGER')
 except Exception:

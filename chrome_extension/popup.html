@@ -5,8 +5,12 @@
     <title>دستیار NAV</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        body { width: 300px; }
+        body { width: 320px; }
         .container { padding: 20px; margin-bottom: 0;}
+        .controls { display: flex; justify-content: space-between; margin-top: 15px; }
+        .controls button { flex-grow: 1; margin: 0 5px; padding: 8px; font-size: 0.9rem; }
+        #stopBotBtn { background-color: var(--error-color); }
+        #resetFundBtn { background-color: var(--secondary-color); }
     </style>
 </head>
 <body>
@@ -14,7 +18,13 @@
         <h3>صندوق فعال</h3>
         <p>صندوقی که می‌خواهید نظارت شود را انتخاب کنید.</p>
         <select id="fundSelector"></select>
-        <button id="setActiveFundBtn">شروع نظارت</button>
+        <button id="setActiveFundBtn">روشن کردن / تغییر صندوق</button>
+        
+        <div class="controls">
+            <button id="stopBotBtn">خاموش کردن ربات</button>
+            <button id="resetFundBtn">ریست کردن صندوق</button>
+        </div>
+        
         <div id="status"></div>
     </div>
     <script src="popup.js"></script>

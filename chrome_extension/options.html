@@ -4,58 +4,47 @@
     <meta charset="UTF-8">
     <title>تنظیمات دستیار NAV</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        body { padding: 20px; max-width: 800px; margin: 40px auto; }
-    </style>
+    <style> body { padding: 20px; max-width: 800px; margin: 40px auto; } </style>
 </head>
 <body>
-    <div class="container">
-      <h2>تنظیمات دستیار هوشمند NAV</h2>
-    </div>
-    
+    <div class="container"><h2>تنظیمات دستیار هوشمند NAV</h2></div>
     <div class="container">
         <h3>وضعیت اتصال به سرور</h3>
-        <p>برای اطمینان از اینکه اکستنشن به سرور پایتون متصل است، از این دکمه استفاده کنید.</p>
+        <p>برای اطمینان از اتصال به سرور پایتون، از این دکمه استفاده کنید.</p>
         <button id="testConnectionBtn">⚡ تست اتصال</button>
         <span id="connectionStatus"></span>
     </div>
-
     <div class="container">
         <h3>۱. افزودن صندوق جدید</h3>
         <input type="text" id="newFundName" placeholder="نام صندوق (مثال: کارا)">
-        <input type="text" id="newFundSymbol" placeholder="شناسه API صندوق">
+        <input type="text" id="newFundSymbol" placeholder="شناسه API صندوق (نام فارسی نماد)">
         <button id="addFundBtn">افزودن صندوق</button>
     </div>
-
     <div class="container">
         <h3>۲. پیکربندی صندوق</h3>
         <p>ابتدا صندوق مورد نظر را از لیست زیر انتخاب کنید:</p>
         <select id="fundSelector"></select>
         <hr>
-
+        <h4>تنظیمات اصلی</h4>
+        <input type="text" id="tolerance" placeholder="مقدار تلورانس (ریال) - مثال: 4">
         <h4>آدرس صفحات</h4>
         <input type="text" id="navPageUrl" placeholder="آدرس صفحه وضعیت ارزش صندوق">
         <input type="text" id="expertPageUrl" placeholder="آدرس صفحه قیمت کارشناسی">
-
         <h4>سلکتورهای صفحه وضعیت ارزش صندوق</h4>
         <input type="text" id="dateSelector" placeholder="سلکتور برای ستون تاریخ">
         <input type="text" id="timeSelector" placeholder="سلکتور برای ستون زمان">
         <input type="text" id="navPriceSelector" placeholder="سلکتور برای قیمت ابطال (NAV)">
         <input type="text" id="totalUnitsSelector" placeholder="سلکتور برای تعداد کل واحدها">
         <input type="text" id="navSearchBtnSelector" placeholder="سلکتور برای دکمه جستجو">
-
         <h4>سلکتورهای صفحه قیمت کارشناسی</h4>
-        <input type="text" id="securitiesListSelector" placeholder="سلکتور برای لیست اوراق (برای دراپ‌دان)">
-        <input type="text" id="sellableQtySelector" placeholder="سلکتور برای مانده قابل فروش">
-        <input type="text" id="expertPriceSelector" placeholder="سلکتور برای قیمت کارشناسی">
-        <input type="text" id="increaseRowsSelector" placeholder="سلکتور برای دکمه/ورودی افزایش تعداد ردیف‌ها">
+        <input type="text" id="securitiesListSelector" placeholder="سلکتور برای لیست اوراق">
+        <input type="text" id="sellableQtySelector" placeholder="سلکتور نسبی برای مانده قابل فروش">
+        <input type="text" id="expertPriceSelector" placeholder="سلکتور نسبی برای قیمت کارشناسی">
+        <input type="text" id="increaseRowsSelector" placeholder="سلکتور برای افزایش تعداد ردیف‌ها">
         <input type="text" id="expertSearchBtnSelector" placeholder="سلکتور برای دکمه جستجوی این صفحه">
-        
         <button id="saveConfigBtn">ذخیره پیکربندی</button>
     </div>
-
     <div id="status"></div>
-
     <script src="options.js"></script>
 </body>
 </html>

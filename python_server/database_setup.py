@@ -1,10 +1,12 @@
 import sqlite3
 
-# به فایل دیتابیس متصل می‌شویم (اگر وجود نداشته باشد، ایجاد می‌شود)
+# This script creates the final database structure.
+# Run this once after deleting the old .db file to apply changes.
+
 conn = sqlite3.connect('platform_data.db')
 cursor = conn.cursor()
 
-# --- جدول ۱: صندوق‌ها ---
+# --- Table 1: funds ---
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS funds (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,26 +14,28 @@ CREATE TABLE IF NOT EXISTS funds (
     api_symbol TEXT NOT NULL
 )
 ''')
-print("Table 'funds' created successfully.")
 
-# --- جدول ۲: پیکربندی‌ها (نسخه نهایی با تمام سلکتورها) ---
+# --- Table 2: configurations (UPDATED with 'tolerance' column) ---
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS configurations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fund_id INTEGER NOT NULL,
     
+    -- Main settings
+    tolerance REAL DEFAULT 4.0,
+
     -- Page URLs
     nav_page_url TEXT,
     expert_price_page_url TEXT,
     
-    -- Selectors for NAV Page (وضعیت ارزش صندوق)
+    -- Selectors for NAV Page
     date_selector TEXT,
     time_selector TEXT,
     nav_price_selector TEXT,
     total_units_selector TEXT,
     nav_search_button_selector TEXT,
     
-    -- Selectors for Expert Price Page (قیمت کارشناسی)
+    -- Selectors for Expert Price Page
     securities_list_selector TEXT,
     sellable_quantity_selector TEXT,
     expert_price_selector TEXT,
@@ -41,9 +45,8 @@ CREATE TABLE IF NOT EXISTS configurations (
     FOREIGN KEY (fund_id) REFERENCES funds (id)
 )
 ''')
-print("Table 'configurations' created successfully.")
 
-# --- جدول ۳: گزارش‌ها ---
+# --- Table 3: logs ---
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,10 +62,7 @@ CREATE TABLE IF NOT EXISTS logs (
     FOREIGN KEY (fund_id) REFERENCES funds (id)
 )
 ''')
-print("Table 'logs' created successfully.")
 
-# تغییرات را ذخیره کرده و اتصال را می‌بندیم
 conn.commit()
 conn.close()
-
 print("\n✅ Database 'platform_data.db' and its tables are ready.")

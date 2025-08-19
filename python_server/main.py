@@ -12,7 +12,6 @@ app = FastAPI(title="NAV Assistant API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # --- Telegram Configuration ---
-# TODO: توکن ربات و شناسه چت ادمین خود را اینجا وارد کنید
 BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 ADMIN_CHAT_ID = "YOUR_ADMIN_CHAT_ID"
 
@@ -109,7 +108,10 @@ def get_configuration(fund_name: str):
 @app.post("/check-nav")
 async def check_nav_logic(data: CheckData):
     conn = get_db_connection()
-    config = await get_configuration(data.fund_name)
+    
+    # *** BUG FIX ***: Removed 'await' from the call to the synchronous function
+    config = get_configuration(data.fund_name)
+    
     fund_id = config['fund_id']
 
     board_price = await get_board_price(config['api_symbol'])

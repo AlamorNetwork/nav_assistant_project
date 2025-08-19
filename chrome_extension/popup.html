@@ -5,12 +5,43 @@
     <title>دستیار NAV</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        body { width: 320px; }
+        body { width: 380px; } /* کمی بزرگتر برای نمایش لاگ */
         .container { padding: 20px; margin-bottom: 0;}
         .controls { display: flex; justify-content: space-between; margin-top: 15px; }
         .controls button { flex-grow: 1; margin: 0 5px; padding: 8px; font-size: 0.9rem; }
         #stopBotBtn { background-color: var(--error-color); }
         #resetFundBtn { background-color: var(--secondary-color); }
+        
+        /* استایل‌های جدید برای بخش لاگ */
+        .log-container {
+            margin-top: 20px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 10px;
+        }
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .log-header h4 { margin: 0; }
+        #clearLogBtn { font-size: 0.8rem; padding: 4px 8px; background-color: var(--secondary-color); }
+        #log-box {
+            background-color: #2d3748; /* پس‌زمینه تیره */
+            color: #e2e8f0; /* متن روشن */
+            font-family: monospace;
+            font-size: 0.8rem;
+            height: 150px;
+            overflow-y: auto;
+            padding: 10px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log-entry { margin: 0 0 5px 0; }
+        .log-entry.error { color: #f56565; } /* قرمز برای خطا */
+        .log-entry.success { color: #48bb78; } /* سبز برای موفقیت */
+        .log-entry.warn { color: #ecc94b; } /* زرد برای هشدار */
     </style>
 </head>
 <body>
@@ -22,10 +53,19 @@
         
         <div class="controls">
             <button id="stopBotBtn">خاموش کردن ربات</button>
-            <button id="resetFundBtn">ریست کردن صندوق</button>
+            <button id="resetFundBtn">ریست (در تب جدید)</button>
         </div>
         
         <div id="status"></div>
+
+        <!-- بخش جدید برای نمایش لاگ‌ها -->
+        <div class="log-container">
+            <div class="log-header">
+                <h4>لاگ‌های ربات</h4>
+                <button id="clearLogBtn">پاک کردن</button>
+            </div>
+            <div id="log-box"></div>
+        </div>
     </div>
     <script src="popup.js"></script>
 </body>

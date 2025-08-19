@@ -3,6 +3,10 @@ const statusDiv = document.getElementById('status');
 const fundSelector = document.getElementById('fundSelector');
 const testConnectionBtn = document.getElementById('testConnectionBtn');
 const connectionStatusSpan = document.getElementById('connectionStatus');
+const testModeToggle = document.getElementById('testModeToggle');
+const newFundType = document.getElementById('newFundType');
+const templateSelector = document.getElementById('templateSelector');
+const applyTemplateBtn = document.getElementById('applyTemplateBtn');
 
 async function testServerConnection() {
     connectionStatusSpan.textContent = '⏳ در حال تست...';
@@ -34,23 +38,39 @@ async function fetchFunds() {
             option.textContent = fund.name;
             fundSelector.appendChild(option);
         });
+        // بارگذاری تنظیم تست مود ذخیره‌شده (اختصاصی هر صندوق)
+        const stored = await chrome.storage.sync.get('perFundTestMode');
+        const perFundTestMode = stored.perFundTestMode || {};
+        fundSelector.addEventListener('change', () => {
+            const selected = fundSelector.value;
+            testModeToggle.checked = !!perFundTestMode[selected];
+        });
+        testModeToggle.addEventListener('change', async () => {
+            const selected = fundSelector.value;
+            if (!selected) return;
+            const updated = { ...(stored.perFundTestMode || {}), [selected]: testModeToggle.checked };
+            await chrome.storage.sync.set({ perFundTestMode: updated });
+            updateStatus(`حالت تست برای '${selected}' ${testModeToggle.checked ? 'فعال' : 'غیرفعال'} شد.`, 'success');
+        });
     } catch (error) { updateStatus(error.message, 'error'); }
 }
 
 async function addFund() {
     const name = document.getElementById('newFundName').value;
     const symbol = document.getElementById('newFundSymbol').value;
+    const type = newFundType.value || 'rayan';
     if (!name || !symbol) { updateStatus('نام و شناسه صندوق الزامی است.', 'error'); return; }
     try {
         const response = await fetch(`${API_BASE_URL}/funds`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: name, api_symbol: symbol }),
+            body: JSON.stringify({ name: name, api_symbol: symbol, type }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail);
         updateStatus(`صندوق '${name}' با موفقیت اضافه شد.`, 'success');
         document.getElementById('newFundName').value = '';
         document.getElementById('newFundSymbol').value = '';
+        newFundType.value = 'rayan';
         fetchFunds();
     } catch (error) { updateStatus(error.message, 'error'); }
 }
@@ -108,6 +128,39 @@ async function loadConfigurationForSelectedFund() {
     } catch (error) { updateStatus(error.message, 'error'); }
 }
 
+async function fetchTemplates() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/templates`);
+        if (!response.ok) return;
+        const data = await response.json();
+        templateSelector.innerHTML = '<option value="">-- انتخاب کنید --</option>';
+        data.templates.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.name;
+            opt.textContent = t.name;
+            opt.dataset.fields = JSON.stringify(t.fields);
+            opt.dataset.tolerance = t.tolerance;
+            templateSelector.appendChild(opt);
+        });
+    } catch {}
+}
+
+function applySelectedTemplate() {
+    const selected = templateSelector.value;
+    if (!selected) return;
+    const opt = templateSelector.selectedOptions[0];
+    const fields = JSON.parse(opt.dataset.fields || '{}');
+    const tol = parseFloat(opt.dataset.tolerance || '4');
+    document.getElementById('tolerance').value = tol;
+    const map = {
+        date_selector: 'dateSelector', time_selector: 'timeSelector', nav_price_selector: 'navPriceSelector', total_units_selector: 'totalUnitsSelector', nav_search_button_selector: 'navSearchBtnSelector', securities_list_selector: 'securitiesListSelector', sellable_quantity_selector: 'sellableQtySelector', expert_price_selector: 'expertPriceSelector', increase_rows_selector: 'increaseRowsSelector', expert_search_button_selector: 'expertSearchBtnSelector'
+    };
+    Object.keys(map).forEach(apiKey => {
+        if (fields[apiKey]) document.getElementById(map[apiKey]).value = fields[apiKey];
+    });
+    updateStatus('تمپلیت اعمال شد.', 'success');
+}
+
 function updateStatus(message, type) {
     statusDiv.textContent = message;
     statusDiv.style.color = type === 'error' ? 'var(--error-color)' : 'var(--success-color)';
@@ -123,3 +176,5 @@ testConnectionBtn.addEventListener('click', testServerConnection);
 document.getElementById('addFundBtn').addEventListener('click', addFund);
 document.getElementById('saveConfigBtn').addEventListener('click', saveConfiguration);
 fundSelector.addEventListener('change', loadConfigurationForSelectedFund);
+document.addEventListener('DOMContentLoaded', fetchTemplates);
+applyTemplateBtn.addEventListener('click', applySelectedTemplate);

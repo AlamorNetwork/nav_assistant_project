@@ -11,7 +11,8 @@ cursor.execute('''
 CREATE TABLE IF NOT EXISTS funds (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    api_symbol TEXT NOT NULL
+    api_symbol TEXT NOT NULL,
+    type TEXT DEFAULT 'rayan'
 )
 ''')
 
@@ -62,6 +63,24 @@ CREATE TABLE IF NOT EXISTS logs (
     FOREIGN KEY (fund_id) REFERENCES funds (id)
 )
 ''')
+
+# --- Table 0: users ---
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT DEFAULT 'user',
+    token TEXT,
+    created_at TEXT
+)
+''')
+
+# Add owner_user_id to funds if not exists (best-effort)
+try:
+    cursor.execute('ALTER TABLE funds ADD COLUMN owner_user_id INTEGER')
+except Exception:
+    pass
 
 conn.commit()
 conn.close()

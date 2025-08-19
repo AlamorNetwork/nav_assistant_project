@@ -1,5 +1,5 @@
 const API_BASE_URL = 'https://respina.irplatforme.ir';
-const TEST_MODE = true; // برای فعال/غیرفعال کردن حالت تست، این خط را تغییر دهید
+let TEST_MODE = true; // حالت پیش‌فرض؛ می‌تواند بر اساس صندوق غیرفعال/فعال شود
 const MAX_PERSISTED_LOGS = 500;
 let monitoringInterval = null;
 let monitoringIntervalMs = 120000; // 2m inside market hours
@@ -111,6 +111,14 @@ async function performCheck() {
     const { activeFund } = await chrome.storage.sync.get('activeFund');
     if (!activeFund) { if (monitoringInterval) clearInterval(monitoringInterval); log("ربات خاموش است.", 'warn'); return; }
     log(`صندوق فعال: '${activeFund}'.`);
+
+    // تست مود اختصاصی هر صندوق
+    try {
+        const stored = await chrome.storage.sync.get('perFundTestMode');
+        const perFundTestMode = stored.perFundTestMode || {};
+        TEST_MODE = !!perFundTestMode[activeFund];
+        log(`حالت تست برای این صندوق: ${TEST_MODE ? 'فعال' : 'غیرفعال'}`);
+    } catch {}
 
     let config;
     try {

@@ -2,11 +2,12 @@ import sqlite3
 import httpx
 import telegram
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+import hashlib, secrets
 
 # --- App Setup ---
 app = FastAPI(title="NAV Assistant API")
@@ -55,7 +56,7 @@ def get_db_connection():
     return conn
 
 # --- Pydantic Models ---
-class Fund(BaseModel): name: str; api_symbol: str
+class Fund(BaseModel): name: str; api_symbol: str; type: Optional[str] = 'rayan'
 class Configuration(BaseModel):
     fund_name: str; tolerance: Optional[float] = 4.0; nav_page_url: Optional[str] = None; expert_price_page_url: Optional[str] = None
     date_selector: Optional[str] = None; time_selector: Optional[str] = None; nav_price_selector: Optional[str] = None
@@ -72,15 +73,37 @@ class StaleAlert(BaseModel):
     last_nav_time: str
     age_seconds: float
 
+class UserCredentials(BaseModel):
+    username: str
+    password: str
+
+class User(BaseModel):
+    username: str
+    role: str = 'user'
+    token: Optional[str] = None
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+def authenticate(token: Optional[str] = Header(None)):
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    conn = get_db_connection()
+    user = conn.execute("SELECT id, username, role FROM users WHERE token = ?", (token,)).fetchone()
+    conn.close()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return {"id": user['id'], "username": user['username'], "role": user['role']}
+
 # --- API Endpoints ---
 @app.get("/")
 def read_root(): return {"status": "ok", "message": "NAV Assistant API is running"}
 
 @app.post("/funds")
-def add_fund(fund: Fund):
+def add_fund(fund: Fund, user=Depends(authenticate)):
     conn = get_db_connection()
     try:
-        conn.execute("INSERT INTO funds (name, api_symbol) VALUES (?, ?)", (fund.name, fund.api_symbol))
+        conn.execute("INSERT INTO funds (name, api_symbol, type, owner_user_id) VALUES (?, ?, ?, ?)", (fund.name, fund.api_symbol, fund.type or 'rayan', user['id']))
         conn.commit()
     except sqlite3.IntegrityError: raise HTTPException(status_code=400, detail=f"Fund '{fund.name}' already exists.")
     finally: conn.close()
@@ -91,10 +114,12 @@ def get_funds():
     conn = get_db_connection(); funds = conn.execute("SELECT * FROM funds ORDER BY name").fetchall(); conn.close(); return funds
 
 @app.post("/configurations")
-def save_configuration(config: Configuration):
+def save_configuration(config: Configuration, user=Depends(authenticate)):
     conn = get_db_connection()
-    fund = conn.execute("SELECT id FROM funds WHERE name = ?", (config.fund_name,)).fetchone()
+    fund = conn.execute("SELECT id, owner_user_id FROM funds WHERE name = ?", (config.fund_name,)).fetchone()
     if not fund: raise HTTPException(status_code=404, detail=f"Fund '{config.fund_name}' not found.")
+    if fund['owner_user_id'] and fund['owner_user_id'] != user['id'] and user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Not allowed to modify this fund")
     fund_id = fund['id']
     existing_config = conn.execute("SELECT id FROM configurations WHERE fund_id = ?", (fund_id,)).fetchone()
     if existing_config:
@@ -110,10 +135,47 @@ def save_configuration(config: Configuration):
 @app.get("/configurations/{fund_name}")
 def get_configuration(fund_name: str):
     conn = get_db_connection()
-    config = conn.execute("SELECT c.*, f.api_symbol FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = ?", (fund_name,)).fetchone()
+    config = conn.execute("SELECT c.*, f.api_symbol, f.type as fund_type FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = ?", (fund_name,)).fetchone()
     conn.close()
     if not config: raise HTTPException(status_code=404, detail=f"Configuration for '{fund_name}' not found.")
     return config
+
+@app.get("/templates")
+def get_templates():
+    # Default selectors for two vendor types
+    rayan = {
+        "name": "rayan",
+        "tolerance": 4.0,
+        "fields": {
+            "date_selector": "#navDate",
+            "time_selector": "#navTime",
+            "nav_price_selector": "#navPrice",
+            "total_units_selector": "#totalUnits",
+            "nav_search_button_selector": "#searchBtn",
+            "securities_list_selector": "#adjustedIpList > tbody > tr > td:nth-child(1)",
+            "sellable_quantity_selector": "td:nth-child(12)",
+            "expert_price_selector": "td:nth-child(3)",
+            "increase_rows_selector": "#pageSize",
+            "expert_search_button_selector": "#searchExpertBtn"
+        }
+    }
+    tadbir = {
+        "name": "tadbir",
+        "tolerance": 4.0,
+        "fields": {
+            "date_selector": "#navDate",
+            "time_selector": "#navTime",
+            "nav_price_selector": "#navPrice",
+            "total_units_selector": "#totalUnits",
+            "nav_search_button_selector": "#searchBtn",
+            "securities_list_selector": "#adjustedIpList > tbody > tr > td:nth-child(1)",
+            "sellable_quantity_selector": "td:nth-child(12)",
+            "expert_price_selector": "td:nth-child(3)",
+            "increase_rows_selector": "#pageSize",
+            "expert_search_button_selector": "#searchExpertBtn"
+        }
+    }
+    return {"templates": [rayan, tadbir]}
 
 @app.post("/check-nav")
 async def check_nav_logic(data: CheckData):
@@ -192,3 +254,30 @@ async def alert_stale_nav(alert: StaleAlert):
         (f"\nسن تاخیر (ثانیه): {int(alert.age_seconds)}" if alert.age_seconds is not None else "")
     await send_telegram_alert(message)
     return {"status": "ok"}
+
+@app.post("/auth/login")
+def login(creds: UserCredentials):
+    conn = get_db_connection()
+    row = conn.execute("SELECT id, username, password_hash, role FROM users WHERE username = ?", (creds.username,)).fetchone()
+    if not row or row['password_hash'] != hash_password(creds.password):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    token = secrets.token_hex(16)
+    conn.execute("UPDATE users SET token = ? WHERE id = ?", (token, row['id']))
+    conn.commit()
+    conn.close()
+    return {"token": token, "username": row['username'], "role": row['role']}
+
+@app.post("/auth/create-user")
+def create_user(creds: UserCredentials, user=Depends(authenticate)):
+    if user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admin can create users")
+    conn = get_db_connection()
+    try:
+        conn.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)", (creds.username, hash_password(creds.password), 'user', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Username already exists")
+    conn.close()
+    return {"status": "success"}

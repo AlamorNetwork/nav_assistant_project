@@ -18,6 +18,10 @@
         <h3>۱. افزودن صندوق جدید</h3>
         <input type="text" id="newFundName" placeholder="نام صندوق (مثال: کارا)">
         <input type="text" id="newFundSymbol" placeholder="شناسه API صندوق (نام فارسی نماد)">
+        <select id="newFundType">
+            <option value="rayan">رایان هم‌افزار</option>
+            <option value="tadbir">تدبیر رایان پرداز</option>
+        </select>
         <button id="addFundBtn">افزودن صندوق</button>
     </div>
     <div class="container">
@@ -25,6 +29,15 @@
         <p>ابتدا صندوق مورد نظر را از لیست زیر انتخاب کنید:</p>
         <select id="fundSelector"></select>
         <hr>
+        <div style="display:flex; gap: 8px; align-items:center;">
+            <label>تمپلیت:</label>
+            <select id="templateSelector"></select>
+            <button id="applyTemplateBtn">اعمال تمپلیت</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin:8px 0;">
+            <input type="checkbox" id="testModeToggle">
+            <span>فعال کردن حالت تست برای این صندوق</span>
+        </label>
         <h4>تنظیمات اصلی</h4>
         <input type="text" id="tolerance" placeholder="مقدار تلورانس (ریال) - مثال: 4">
         <h4>آدرس صفحات</h4>

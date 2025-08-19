@@ -1,19 +1,14 @@
 const API_BASE_URL = 'https://respina.irplatforme.ir';
+const TEST_MODE = true; // برای فعال/غیرفعال کردن حالت تست، این خط را تغییر دهید
 let monitoringInterval = null;
 
-// --- تابع جدید برای ارسال لاگ به پاپ‌آپ ---
-function log(message, type = 'info') {
-    // برای راحتی، همچنان در کنسول صفحه هم لاگ می‌زنیم
-    console.log(`[${type.toUpperCase()}] ${message}`);
-    // پیام را برای پاپ‌آپ ارسال می‌کنیم
-    chrome.runtime.sendMessage({
-        type: 'LOG_MESSAGE',
-        payload: { message, type }
-    });
-}
-
-// --- توابع کمکی ---
+// --- Helper Functions ---
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+function log(message, type = 'info') {
+    console.log(`[${type.toUpperCase()}] ${message}`);
+    chrome.runtime.sendMessage({ type: 'LOG_MESSAGE', payload: { message, type } });
+}
 
 function readElementValue(selector, parentElement = document) {
     try {
@@ -26,13 +21,12 @@ function readElementValue(selector, parentElement = document) {
 
 function areUrlsMatching(currentUrl, configuredUrl) {
     if (!configuredUrl) return false;
-    const currentBaseUrl = currentUrl.split('?')[0];
-    const configuredBaseUrl = configuredUrl.split('?')[0];
-    return currentBaseUrl === configuredBaseUrl;
+    return currentUrl.split('?')[0] === configuredUrl.split('?')[0];
 }
 
+// --- UI Functions (askForSecurity, showNotification) ---
+// These functions remain unchanged from the previous correct version.
 function askForSecurity(securities, callback) {
-    // (این تابع بدون تغییر باقی می‌ماند)
     document.getElementById('nav-assistant-modal')?.remove();
     const modal = document.createElement('div');
     modal.id = 'nav-assistant-modal';
@@ -58,15 +52,34 @@ function askForSecurity(securities, callback) {
     };
 }
 
-// --- تابع منطق اصلی ---
+function showNotification(options) {
+    document.getElementById('nav-assistant-notification')?.remove();
+    const box = document.createElement('div');
+    box.id = 'nav-assistant-notification';
+    let buttonsHTML = options.buttons ? `<div class="buttons">${options.buttons.map(btn => `<button id="${btn.id}" class="${btn.class || ''}">${btn.text}</button>`).join('')}</div>` : '';
+    box.innerHTML = `<div class="header"><strong>🤖 دستیار هوشمند NAV</strong><button class="close-btn">&times;</button></div><div class="body"><p>${options.title}</p>${options.message ? `<p><strong>${options.message}</strong></p>` : ''}${buttonsHTML}</div>`;
+    Object.assign(box.style, { position: 'fixed', top: '20px', right: '20px', width: '320px', backgroundColor: 'white', color: '#333', zIndex: '99999', borderRadius: '12px', boxShadow: '0 5px 15px rgba(0,0,0,0.2)', fontFamily: 'Vazirmatn, sans-serif', direction: 'rtl', borderTop: `5px solid ${options.type === 'success' ? '#28a745' : '#ffc107'}` });
+    box.querySelector('.header').style.cssText = 'padding: 10px 15px; background-color: #f7f7f7; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;';
+    box.querySelector('.body').style.cssText = 'padding: 15px;';
+    box.querySelector('.close-btn').style.cssText = 'background: none; border: none; font-size: 24px; cursor: pointer; color: #888;';
+    if (options.buttons) {
+        box.querySelector('.buttons').style.cssText = 'margin-top: 15px; display: flex; gap: 10px;';
+        box.querySelectorAll('button').forEach(btn => {
+            btn.style.cssText = 'flex-grow: 1; padding: 8px; border-radius: 6px; border: none; color: white; cursor: pointer;';
+            if (btn.id === 'recheck-btn') btn.style.backgroundColor = 'var(--primary-color, #007BFF)'; else btn.style.backgroundColor = 'var(--secondary-color, #6c757d)';
+        });
+    }
+    box.querySelector('.close-btn').onclick = () => box.remove();
+    document.body.appendChild(box);
+    if (options.buttons) { options.buttons.forEach(btn => { document.getElementById(btn.id).onclick = () => { box.remove(); btn.callback(); }; }); }
+}
+
+
+// --- Main Logic ---
 async function performCheck() {
     log("--- شروع چرخه بررسی ---");
     const { activeFund } = await chrome.storage.sync.get('activeFund');
-    if (!activeFund) {
-        if (monitoringInterval) clearInterval(monitoringInterval);
-        log("ربات خاموش است.", 'warn');
-        return;
-    }
+    if (!activeFund) { if (monitoringInterval) clearInterval(monitoringInterval); log("ربات خاموش است.", 'warn'); return; }
     log(`صندوق فعال: '${activeFund}'.`);
 
     let config;
@@ -75,14 +88,12 @@ async function performCheck() {
         if (!response.ok) throw new Error('تنظیمات یافت نشد.');
         config = await response.json();
         log("تنظیمات با موفقیت دریافت شد.", 'success');
-    } catch (error) {
-        log(error.message, 'error');
-        return;
-    }
+    } catch (error) { log(error.message, 'error'); return; }
     
     const localState = await chrome.storage.local.get([`selectedSecurityIndex_${activeFund}`, 'listExpanded', 'needsExpertData', 'navCheckData', 'navSearchClicked']);
     const selectedSecurityIndex = localState[`selectedSecurityIndex_${activeFund}`];
     
+    // --- Initial Setup Logic ---
     if (selectedSecurityIndex === undefined) {
         log("وضعیت: راه‌اندازی اولیه.");
         if (!areUrlsMatching(window.location.href, config.expert_price_page_url)) {
@@ -98,7 +109,7 @@ async function performCheck() {
             if(expertSearchButton) {
                 await chrome.storage.local.set({ listExpanded: true });
                 expertSearchButton.click();
-            }
+            } else { log("دکمه جستجوی صفحه قیمت کارشناسی یافت نشد.", 'error'); }
         } else {
             log("در حال جمع‌آوری لیست اوراق...");
             const securityElements = document.querySelectorAll(config.securities_list_selector);
@@ -114,38 +125,55 @@ async function performCheck() {
         return;
     }
 
+    // --- Main Monitoring Loop ---
     if (areUrlsMatching(window.location.href, config.nav_page_url)) {
+        // *** NEW STATE MACHINE LOGIC FOR NAV PAGE ***
         if (!localState.navSearchClicked) {
+            // State 1: We haven't clicked search yet.
             log("در صفحه NAV. وضعیت: کلیک روی دکمه جستجو.");
             const searchButton = document.querySelector(config.nav_search_button_selector);
             if (searchButton) {
+                // Set the flag BEFORE clicking, then click.
                 await chrome.storage.local.set({ navSearchClicked: true });
                 searchButton.click();
             } else {
                 log("دکمه جستجوی صفحه NAV یافت نشد.", 'error');
             }
         } else {
+            // State 2: We have already clicked. Now we read the data.
             log("در صفحه NAV. وضعیت: خواندن داده‌ها پس از جستجو.");
-            await chrome.storage.local.remove('navSearchClicked');
-            const navOnPage = readElementValue(config.nav_price_selector);
+            await chrome.storage.local.remove('navSearchClicked'); // Reset the flag for the next cycle
+            
+            let navOnPage = readElementValue(config.nav_price_selector);
             const totalUnits = readElementValue(config.total_units_selector);
-            if (navOnPage === null || totalUnits === null) { log("خواندن NAV یا تعداد واحدها ناموفق بود.", 'error'); return; }
+            if (navOnPage === null || totalUnits === null) { log("خواندن NAV/واحدها ناموفق بود.", 'error'); return; }
+            
+            if (TEST_MODE) {
+                log("حالت تست فعال است. در حال ایجاد مغایرت مصنوعی...", 'warn');
+                navOnPage += 50; // اختلاف ساختگی را برای هر دو درخواست حفظ می‌کنیم
+            }
+            
             const response = await fetch(`${API_BASE_URL}/check-nav`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ fund_name: activeFund, nav_on_page: navOnPage, total_units: totalUnits })
             });
             const result = await response.json();
-            log(`پاسخ سرور (بررسی اولیه): ${result.status}`);
+            log(`پاسخ سرور (اولیه): ${result.status}`);
+            
             if (result.status === 'adjustment_needed_more_data_required') {
+                // در حالت تست، همان مقدار تغییر یافته را نگه می‌داریم تا مرحله دوم هم نیاز به تعدیل بدهد
                 await chrome.storage.local.set({ navCheckData: { nav_on_page: navOnPage, total_units: totalUnits }, needsExpertData: true });
-                log("نیاز به تعدیل. در حال انتقال به صفحه قیمت کارشناسی...");
+                log("نیاز به تعدیل. در حال انتقال...");
                 window.location.href = config.expert_price_page_url;
             }
         }
-    } else if (areUrlsMatching(window.location.href, config.expert_price_page_url)) {
+    } 
+    // --- Data Gathering Logic ---
+    else if (areUrlsMatching(window.location.href, config.expert_price_page_url)) {
         if (localState.needsExpertData) {
             log("در صفحه قیمت کارشناسی برای جمع‌آوری داده نهایی.");
             await chrome.storage.local.set({ needsExpertData: false });
+            
             const allSecurityElements = document.querySelectorAll(config.securities_list_selector);
             const selectedElement = allSecurityElements[selectedSecurityIndex];
             if (!selectedElement) { log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود.`, 'error'); return; }
@@ -154,6 +182,7 @@ async function performCheck() {
             const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
             const expertPrice = readElementValue(config.expert_price_selector, selectedRow);
             if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
+
             const finalResponse = await fetch(`${API_BASE_URL}/check-nav`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -164,19 +193,32 @@ async function performCheck() {
             });
             const finalResult = await finalResponse.json();
             log(`پاسخ نهایی سرور: ${finalResult.suggested_nav}`, 'success');
-            alert(`محاسبه انجام شد! قیمت پیشنهادی سرور: ${finalResult.suggested_nav}`);
-            await sleep(5000);
-            log("در حال بازگشت به صفحه NAV...");
-            window.location.href = config.nav_page_url;
+
+            showNotification({
+                title: '⚠️ **نیاز به تعدیل NAV**',
+                message: `قیمت پیشنهادی جدید: ${finalResult.suggested_nav}`,
+                type: 'warn',
+                buttons: [
+                    {
+                        id: 'recheck-btn',
+                        text: 'تعدیل زدم، دوباره چک کن',
+                        callback: () => {
+                            log("کاربر تایید کرد. در حال بازگشت به صفحه NAV برای بررسی مجدد...");
+                            window.location.href = config.nav_page_url;
+                        }
+                    }
+                ]
+            });
         }
     }
 }
 
+// --- Startup and Listeners ---
 async function startMonitoring() {
     await sleep(2000);
     if (monitoringInterval) clearInterval(monitoringInterval);
     performCheck();
-    monitoringInterval = setInterval(performCheck, 120000);
+    monitoringInterval = setInterval(performCheck, 120000); // 2 minutes
     log("نظارت ربات شروع شد.", 'success');
 }
 

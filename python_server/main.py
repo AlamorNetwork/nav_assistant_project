@@ -1,6 +1,7 @@
 import sqlite3
 import httpx
 import telegram
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,19 +13,20 @@ app = FastAPI(title="NAV Assistant API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # --- Telegram Configuration ---
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-ADMIN_CHAT_ID = "YOUR_ADMIN_CHAT_ID"
+# Read credentials from environment to avoid hardcoding placeholders
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")
 
 async def send_telegram_alert(message: str):
-    if not BOT_TOKEN or "YOUR" in BOT_TOKEN:
-        print("Telegram credentials are not set. Skipping alert.")
+    if not BOT_TOKEN or not ADMIN_CHAT_ID:
+        print("[telegram] Credentials missing. Skipping alert.")
         return
     try:
         bot = telegram.Bot(token=BOT_TOKEN)
         await bot.send_message(chat_id=ADMIN_CHAT_ID, text=message, parse_mode='Markdown')
-        print("Telegram alert sent successfully.")
+        print("[telegram] Alert sent successfully.")
     except Exception as e:
-        print(f"Failed to send Telegram alert: {e}")
+        print(f"[telegram] Failed to send alert: {e}")
 
 # --- TSETMC Price Fetching Logic ---
 async def get_board_price(fund_name: str) -> float:
@@ -39,9 +41,11 @@ async def get_board_price(fund_name: str) -> float:
             price_url = f'https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceInfo/{skey}'
             price_response = await client.get(price_url, headers=headers)
             price_response.raise_for_status()
-            return float(price_response.json()['closingPriceInfo']['pDrCotVal'])
+            price_value = float(price_response.json()['closingPriceInfo']['pDrCotVal'])
+            print(f"[price] fund={fund_name} board_price={price_value}")
+            return price_value
         except Exception as e:
-            print(f"An error occurred while fetching board price for {fund_name}: {e}")
+            print(f"[price] Error fetching board price for {fund_name}: {e}")
             return 0.0
 
 # --- DB Connection ---
@@ -115,19 +119,39 @@ async def check_nav_logic(data: CheckData):
     fund_id = config['fund_id']
 
     board_price = await get_board_price(config['api_symbol'])
-    if board_price == 0.0: raise HTTPException(status_code=503, detail="Could not fetch board price.")
+    if board_price == 0.0:
+        raise HTTPException(status_code=503, detail="Could not fetch board price.")
 
     diff = abs(data.nav_on_page - board_price)
+    tolerance = config['tolerance'] if 'tolerance' in config.keys() else 4.0
 
-    if diff < config['tolerance']:
+    print(
+        f"[check-nav] fund={data.fund_name} nav_on_page={data.nav_on_page} total_units={data.total_units} "
+        f"sellable_quantity={data.sellable_quantity} expert_price={data.expert_price} board_price={board_price} "
+        f"diff={diff} tolerance={tolerance}"
+    )
+
+    if diff < tolerance:
         conn.close()
-        return {"status": "ok", "message": "Difference is within tolerance."}
+        return {
+            "status": "ok",
+            "message": "Difference is within tolerance.",
+            "diff": round(diff, 2),
+            "tolerance": tolerance,
+            "board_price": board_price,
+        }
 
     status_message = "Adjustment Needed"
     
     if data.sellable_quantity is None or data.expert_price is None or data.sellable_quantity == 0:
         conn.close()
-        return {"status": "adjustment_needed_more_data_required", "message": "Difference is high, but data for calculation is missing."}
+        return {
+            "status": "adjustment_needed_more_data_required",
+            "message": "Difference is high, but data for calculation is missing.",
+            "diff": round(diff, 2),
+            "tolerance": tolerance,
+            "board_price": board_price,
+        }
 
     is_positive_adjustment = data.nav_on_page > board_price
     numerator = data.total_units * diff
@@ -145,4 +169,11 @@ async def check_nav_logic(data: CheckData):
     conn.commit()
     conn.close()
     
-    return {"status": "adjustment_needed", "suggested_nav": round(suggested_price, 2)}
+    print(f"[check-nav] suggested_nav={suggested_price:.2f} status={status_message}")
+    return {
+        "status": "adjustment_needed",
+        "suggested_nav": round(suggested_price, 2),
+        "diff": round(diff, 2),
+        "tolerance": tolerance,
+        "board_price": board_price,
+    }

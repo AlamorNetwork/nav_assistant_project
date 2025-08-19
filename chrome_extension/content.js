@@ -173,14 +173,32 @@ async function performCheck() {
         if (localState.needsExpertData) {
             log("در صفحه قیمت کارشناسی برای جمع‌آوری داده نهایی.");
             await chrome.storage.local.set({ needsExpertData: false });
-            
-            const allSecurityElements = document.querySelectorAll(config.securities_list_selector);
+
+            // صبر برای لود شدن جدول و در صورت نیاز تلاش برای افزایش ردیف‌ها و جستجو
+            let attempts = 0;
+            let allSecurityElements = document.querySelectorAll(config.securities_list_selector);
+            while (attempts < 20 && allSecurityElements.length === 0) {
+                await sleep(500);
+                allSecurityElements = document.querySelectorAll(config.securities_list_selector);
+                attempts++;
+            }
+            if (allSecurityElements.length === 0) {
+                const increaseRowsInput = document.querySelector(config.increase_rows_selector);
+                const expertSearchButton = document.querySelector(config.expert_search_button_selector);
+                if (increaseRowsInput) { increaseRowsInput.value = ''; increaseRowsInput.value = 1000; }
+                if (expertSearchButton) { expertSearchButton.click(); }
+                await sleep(1000);
+                allSecurityElements = document.querySelectorAll(config.securities_list_selector);
+            }
+
+            log(`تعداد اوراق یافت‌شده: ${allSecurityElements.length}. ایندکس انتخابی: ${selectedSecurityIndex}`);
             const selectedElement = allSecurityElements[selectedSecurityIndex];
             if (!selectedElement) { log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود.`, 'error'); return; }
             const selectedRow = selectedElement.closest('tr');
             if (!selectedRow) { log("پیدا کردن ردیف والد ناموفق بود.", 'error'); return; }
             const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
             const expertPrice = readElementValue(config.expert_price_selector, selectedRow);
+            log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
             if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
 
             const finalResponse = await fetch(`${API_BASE_URL}/check-nav`, {
@@ -195,9 +213,9 @@ async function performCheck() {
             log(`پاسخ نهایی سرور: ${finalResult.suggested_nav}`, 'success');
 
             showNotification({
-                title: '⚠️ **نیاز به تعدیل NAV**',
+                title: '🚨 نیاز به تعدیل NAV',
                 message: `قیمت پیشنهادی جدید: ${finalResult.suggested_nav}`,
-                type: 'warn',
+                type: 'error',
                 buttons: [
                     {
                         id: 'recheck-btn',

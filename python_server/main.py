@@ -87,7 +87,12 @@ def execute(sql: str, params: tuple = ()):
         conn.close()
 
 # --- Pydantic Models ---
-class Fund(BaseModel): name: str; api_symbol: str; type: Optional[str] = 'rayan'
+class Fund(BaseModel):
+    name: str
+    api_symbol: str
+    type: Optional[str] = 'rayan'
+    nav_page_url: Optional[str] = None
+    expert_price_page_url: Optional[str] = None
 class Configuration(BaseModel):
     fund_name: str; tolerance: Optional[float] = 4.0; nav_page_url: Optional[str] = None; expert_price_page_url: Optional[str] = None
     date_selector: Optional[str] = None; time_selector: Optional[str] = None; nav_price_selector: Optional[str] = None
@@ -112,8 +117,6 @@ class User(BaseModel):
 class TemplatePayload(BaseModel):
     name: str
     tolerance: Optional[float] = 4.0
-    nav_page_url: Optional[str] = None
-    expert_price_page_url: Optional[str] = None
     date_selector: Optional[str] = None
     time_selector: Optional[str] = None
     nav_price_selector: Optional[str] = None
@@ -145,7 +148,7 @@ def read_root(): return {"status": "ok", "message": "NAV Assistant API is runnin
 @app.post("/funds")
 def add_fund(fund: Fund, user=Depends(authenticate)):
     try:
-        execute("INSERT INTO funds (name, api_symbol, type, owner_user_id) VALUES (%s, %s, %s, %s)", (fund.name, fund.api_symbol, fund.type or 'rayan', user['id']))
+        execute("INSERT INTO funds (name, api_symbol, type, owner_user_id, nav_page_url, expert_price_page_url) VALUES (%s, %s, %s, %s, %s, %s)", (fund.name, fund.api_symbol, fund.type or 'rayan', user['id'], fund.nav_page_url, fund.expert_price_page_url))
     except Exception as e:
         if 'duplicate key' in str(e).lower():
             raise HTTPException(status_code=400, detail=f"Fund '{fund.name}' already exists.")
@@ -175,7 +178,7 @@ def save_configuration(config: Configuration, user=Depends(authenticate)):
 
 @app.get("/configurations/{fund_name}")
 def get_configuration(fund_name: str):
-    config = fetchone("SELECT c.*, f.api_symbol, f.type as fund_type FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = %s", (fund_name,))
+    config = fetchone("SELECT c.*, f.api_symbol, f.type as fund_type, f.nav_page_url as fund_nav_page_url, f.expert_price_page_url as fund_expert_page_url FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = %s", (fund_name,))
     if not config: raise HTTPException(status_code=404, detail=f"Configuration for '{fund_name}' not found.")
     return config
 

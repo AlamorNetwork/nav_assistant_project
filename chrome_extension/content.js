@@ -190,7 +190,8 @@ async function checkSingleFund(fund) {
         log(`وضعیت: راه‌اندازی اولیه برای صندوق ${fund.name}.`);
         if (!isOnExpertPage) {
             log(`در صفحه اشتباه. باز کردن تب جدید قیمت کارشناسی برای ${fund.name}...`);
-            try { window.open(config.expert_price_page_url, '_blank'); } catch {}
+            const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
+            try { if (expertUrl) window.open(expertUrl, '_blank'); } catch {}
             return;
         }
         if (!localState[`listExpanded_${fund.name}`]) {
@@ -214,7 +215,8 @@ async function checkSingleFund(fund) {
                     [`listExpanded_${fund.name}`]: false 
                 });
                 log(`اوراق در ردیف ${chosenIndex} برای ${fund.name} انتخاب شد. در حال انتقال به صفحه NAV...`);
-                window.location.href = config.nav_page_url;
+                const navUrl = config.fund_nav_page_url || config.nav_page_url;
+                if (navUrl) window.location.href = navUrl;
             });
         }
         return;
@@ -265,7 +267,8 @@ async function checkSingleFund(fund) {
                     [`needsExpertData_${fund.name}`]: true 
                 });
                 log(`نیاز به تعدیل برای ${fund.name}. در حال انتقال...`);
-                try { window.open(config.expert_price_page_url, '_blank'); } catch {}
+                const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
+                try { if (expertUrl) window.open(expertUrl, '_blank'); } catch {}
             }
             
             // --- Staleness check: تاریخ/زمان NAV لحظه‌ای ---
@@ -425,7 +428,8 @@ async function checkSingleFund(fund) {
                         text: 'تعدیل زدم، دوباره چک کن',
                         callback: () => {
                             log(`کاربر تایید کرد برای ${fund.name}. در حال بازگشت به صفحه NAV برای بررسی مجدد...`);
-                            window.location.href = config.nav_page_url;
+                            const navUrl = config.fund_nav_page_url || config.nav_page_url;
+                            if (navUrl) window.location.href = navUrl;
                         }
                     }
                 ]

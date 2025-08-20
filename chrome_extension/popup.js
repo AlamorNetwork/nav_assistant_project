@@ -115,11 +115,15 @@ async function fetchFunds() {
     try {
         const stored = await chrome.storage.sync.get('authToken');
         const token = stored.authToken || '';
-        const response = await fetch(`${API_BASE_URL}/funds`, {
-            headers: { 'token': token }
-        });
-        if (!response.ok) throw new Error('Server connection failed');
-        const funds = await response.json();
+        let response = await fetch(`${API_BASE_URL}/funds`, { headers: { 'token': token } });
+        if (!response.ok) {
+            // Retry without token (endpoint is public in our API)
+            response = await fetch(`${API_BASE_URL}/funds`);
+        }
+        const raw = await response.text();
+        if (!response.ok) throw new Error(raw || 'Server connection failed');
+        let funds = [];
+        try { funds = raw ? JSON.parse(raw) : []; } catch (e) { throw new Error('Invalid JSON from /funds'); }
         fundSelector.innerHTML = '<option value="">-- انتخاب کنید --</option>';
         funds.forEach(fund => {
             const option = document.createElement('option');
@@ -127,6 +131,9 @@ async function fetchFunds() {
             option.textContent = fund.name;
             fundSelector.appendChild(option);
         });
+        if (!funds.length) {
+            updateStatus('هیچ صندوقی یافت نشد. از پنل ادمین صندوق اضافه کنید.', 'neutral');
+        }
         chrome.storage.sync.get('activeFund', (data) => {
             if (data.activeFund) {
                 fundSelector.value = data.activeFund;
@@ -135,7 +142,10 @@ async function fetchFunds() {
                 updateStatus('ربات خاموش است.', 'neutral');
             }
         });
-    } catch (error) { updateStatus(error.message, 'error'); }
+    } catch (error) {
+        addLog(`Funds fetch error: ${error.message}`, 'error');
+        updateStatus(error.message, 'error');
+    }
 }
 
 function setActiveFund() {

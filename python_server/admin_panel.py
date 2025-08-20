@@ -136,6 +136,11 @@ async def update_template(request: Request, template_name: str = Form(), templat
         authenticate_admin(request)
     except HTTPException:
         return RedirectResponse(url="/", status_code=302)
+    # Normalize name
+    template_name = (template_name or "").strip()
+    if not template_name:
+        return RedirectResponse(url="/admin?message=Template%20name%20is%20required", status_code=302)
+
     # Parse JSON
     try:
         data = json.loads(template_data)
@@ -163,15 +168,38 @@ async def update_template(request: Request, template_name: str = Form(), templat
             cur.execute("SELECT name FROM templates WHERE name=%s", (template_name,))
             exists = cur.fetchone()
             if exists:
-                cur.execute("UPDATE templates SET tolerance=%s, nav_page_url=%s, expert_price_page_url=%s, date_selector=%s, time_selector=%s, nav_price_selector=%s, total_units_selector=%s, nav_search_button_selector=%s, securities_list_selector=%s, sellable_quantity_selector=%s, expert_price_selector=%s, increase_rows_selector=%s, expert_search_button_selector=%s WHERE name=%s",
-                            (fields['tolerance'], fields['nav_page_url'], fields['expert_price_page_url'], fields['date_selector'], fields['time_selector'], fields['nav_price_selector'], fields['total_units_selector'], fields['nav_search_button_selector'], fields['securities_list_selector'], fields['sellable_quantity_selector'], fields['expert_price_selector'], fields['increase_rows_selector'], fields['expert_search_button_selector'], template_name))
+                cur.execute(
+                    "UPDATE templates SET tolerance=%s, nav_page_url=%s, expert_price_page_url=%s, date_selector=%s, time_selector=%s, nav_price_selector=%s, total_units_selector=%s, nav_search_button_selector=%s, securities_list_selector=%s, sellable_quantity_selector=%s, expert_price_selector=%s, increase_rows_selector=%s, expert_search_button_selector=%s WHERE name=%s",
+                    (
+                        fields['tolerance'], fields['nav_page_url'], fields['expert_price_page_url'],
+                        fields['date_selector'], fields['time_selector'], fields['nav_price_selector'],
+                        fields['total_units_selector'], fields['nav_search_button_selector'],
+                        fields['securities_list_selector'], fields['sellable_quantity_selector'],
+                        fields['expert_price_selector'], fields['increase_rows_selector'],
+                        fields['expert_search_button_selector'], template_name,
+                    ),
+                )
             else:
-                cur.execute("INSERT INTO templates (name, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                            (template_name, fields['tolerance'], fields['nav_page_url'], fields['expert_price_page_url'], fields['date_selector'], fields['time_selector'], fields['nav_price_selector'], fields['total_units_selector'], fields['nav_search_button_selector'], fields['securities_list_selector'], fields['sellable_quantity_selector'], fields['expert_price_selector'], fields['increase_rows_selector'], fields['expert_search_button_selector']))
+                cur.execute(
+                    "INSERT INTO templates (name, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        template_name, fields['tolerance'], fields['nav_page_url'], fields['expert_price_page_url'],
+                        fields['date_selector'], fields['time_selector'], fields['nav_price_selector'],
+                        fields['total_units_selector'], fields['nav_search_button_selector'],
+                        fields['securities_list_selector'], fields['sellable_quantity_selector'],
+                        fields['expert_price_selector'], fields['increase_rows_selector'],
+                        fields['expert_search_button_selector'],
+                    ),
+                )
             conn.commit()
+    except Exception as e:
+        # Surface DB error to UI
+        import traceback
+        msg = urllib.parse.quote(f"DB error: {str(e)[:200]}")
+        return RedirectResponse(url=f"/admin?message={msg}", status_code=302)
     finally:
         conn.close()
-    return RedirectResponse(url="/admin?message=Template saved", status_code=302)
+    return RedirectResponse(url=f"/admin?message=Template%20saved&edit_template={urllib.parse.quote(template_name)}", status_code=302)
 
 @app.post("/admin/upsert-template-fields")
 async def upsert_template_fields(request: Request,

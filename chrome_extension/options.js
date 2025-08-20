@@ -7,6 +7,7 @@ const testModeToggle = document.getElementById('testModeToggle');
 const newFundType = document.getElementById('newFundType');
 const templateSelector = document.getElementById('templateSelector');
 const applyTemplateBtn = document.getElementById('applyTemplateBtn');
+const applyFromDbBtn = document.getElementById('applyFromDbBtn');
 const loginBtn = document.getElementById('loginBtn');
 const loginUsername = document.getElementById('loginUsername');
 const loginPassword = document.getElementById('loginPassword');
@@ -169,6 +170,50 @@ function applySelectedTemplate() {
     updateStatus('تمپلیت اعمال شد.', 'success');
 }
 
+async function applyFromDbTemplate() {
+    const selectedFund = fundSelector.value;
+    if (!selectedFund) { updateStatus('ابتدا صندوق را انتخاب کنید.', 'error'); return; }
+    try {
+        const response = await fetch(`${API_BASE_URL}/configurations/${selectedFund}`);
+        if (response.ok) {
+            const config = await response.json();
+            const map = {
+                tolerance: 'tolerance', nav_page_url: 'navPageUrl', expert_price_page_url: 'expertPageUrl',
+                date_selector: 'dateSelector', time_selector: 'timeSelector', nav_price_selector: 'navPriceSelector', total_units_selector: 'totalUnitsSelector', nav_search_button_selector: 'navSearchBtnSelector',
+                securities_list_selector: 'securitiesListSelector', sellable_quantity_selector: 'sellableQtySelector', expert_price_selector: 'expertPriceSelector', increase_rows_selector: 'increaseRowsSelector', expert_search_button_selector: 'expertSearchBtnSelector'
+            };
+            Object.keys(map).forEach(apiKey => {
+                if (config[apiKey]) document.getElementById(map[apiKey]).value = config[apiKey];
+            });
+            updateStatus('سلکتورهای دیتابیس روی فرم اعمال شد.', 'success');
+            return;
+        }
+        // Fallback: اگر پیکربندی صندوق وجود ندارد، تمپلیت متناسب با نوع صندوق را اعمال کن
+        const fundsResp = await fetch(`${API_BASE_URL}/funds`);
+        const funds = fundsResp.ok ? await fundsResp.json() : [];
+        const fund = funds.find(f => f.name === selectedFund);
+        const fundType = fund?.type || '';
+        const tmplResp = await fetch(`${API_BASE_URL}/templates`);
+        const tmpl = tmplResp.ok ? await tmplResp.json() : { templates: [] };
+        const match = tmpl.templates.find(t => t.name === fundType) || tmpl.templates[0];
+        if (match) {
+            const fields = match.fields || {};
+            document.getElementById('tolerance').value = match.tolerance || 4.0;
+            const map = {
+                date_selector: 'dateSelector', time_selector: 'timeSelector', nav_price_selector: 'navPriceSelector', total_units_selector: 'totalUnitsSelector', nav_search_button_selector: 'navSearchBtnSelector', securities_list_selector: 'securitiesListSelector', sellable_quantity_selector: 'sellableQtySelector', expert_price_selector: 'expertPriceSelector', increase_rows_selector: 'increaseRowsSelector', expert_search_button_selector: 'expertSearchBtnSelector'
+            };
+            Object.keys(map).forEach(apiKey => {
+                if (fields[apiKey]) document.getElementById(map[apiKey]).value = fields[apiKey];
+            });
+            updateStatus(`پیکربندی صندوق نبود. تمپلیت '${match.name}' اعمال شد.`, 'warn');
+        } else {
+            throw new Error('نه پیکربندی و نه تمپلیت مناسب یافت نشد.');
+        }
+    } catch (e) {
+        updateStatus(e.message, 'error');
+    }
+}
+
 function updateStatus(message, type) {
     statusDiv.textContent = message;
     statusDiv.style.color = type === 'error' ? 'var(--error-color)' : 'var(--success-color)';
@@ -186,6 +231,7 @@ document.getElementById('saveConfigBtn').addEventListener('click', saveConfigura
 fundSelector.addEventListener('change', loadConfigurationForSelectedFund);
 document.addEventListener('DOMContentLoaded', fetchTemplates);
 applyTemplateBtn.addEventListener('click', applySelectedTemplate);
+applyFromDbBtn.addEventListener('click', applyFromDbTemplate);
 
 async function login() {
     loginStatus.textContent = '⏳';

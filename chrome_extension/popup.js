@@ -10,6 +10,14 @@ const confirmAdjustedBtn = document.getElementById('confirmAdjustedBtn');
 const showLastNotifBtn = document.getElementById('showLastNotifBtn');
 const adjustmentStatus = document.getElementById('adjustmentStatus');
 
+// Login elements
+const loginScreen = document.getElementById('loginScreen');
+const mainInterface = document.getElementById('mainInterface');
+const loginBtn = document.getElementById('loginBtn');
+const loginUsername = document.getElementById('loginUsername');
+const loginPassword = document.getElementById('loginPassword');
+const loginStatus = document.getElementById('loginStatus');
+
 // --- مدیریت لاگ ---
 function renderLogEntry(entry) {
     if (!logBox) return;
@@ -33,19 +41,83 @@ async function clearLogs() {
     }
 }
 
-// گوش دادن به پیام‌های ارسالی از content.js
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.type === 'LOG_MESSAGE') {
-        addLog(request.payload.message, request.payload.type);
-    } else if (request.type === 'OPEN_NEW_TAB') {
-        chrome.tabs.create({ url: request.url, active: true });
+// --- Authentication ---
+async function checkAuth() {
+    const stored = await new Promise(resolve => chrome.storage.sync.get(['authToken', 'authUser'], resolve));
+    if (stored.authToken && stored.authUser) {
+        // Verify token is still valid
+        try {
+            const response = await fetch(`${API_BASE_URL}/funds`, {
+                headers: { 'token': stored.authToken }
+            });
+            if (response.ok) {
+                showMainInterface();
+                return true;
+            }
+        } catch {}
     }
-});
+    showLoginScreen();
+    return false;
+}
+
+function showLoginScreen() {
+    loginScreen.style.display = 'block';
+    mainInterface.style.display = 'none';
+}
+
+function showMainInterface() {
+    loginScreen.style.display = 'none';
+    mainInterface.style.display = 'block';
+}
+
+async function login() {
+    loginStatus.textContent = '⏳ در حال ورود...';
+    loginStatus.style.color = 'var(--secondary-color)';
+    try {
+        const response = await fetch(`${API_BASE_URL}/auth/login`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: loginUsername.value, password: loginPassword.value })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'ورود ناموفق');
+        
+        await chrome.storage.sync.set({ 
+            authToken: result.token, 
+            authUser: { username: result.username, role: result.role } 
+        });
+        
+        loginStatus.textContent = '✅ ورود موفق';
+        loginStatus.style.color = 'var(--success-color)';
+        loginPassword.value = '';
+        
+        setTimeout(() => {
+            showMainInterface();
+            fetchFunds();
+            loadPersistedLogs();
+            addLog('ورود موفق. در حال بارگذاری...');
+        }, 1000);
+        
+    } catch (e) {
+        loginStatus.textContent = '❌ ورود ناموفق';
+        loginStatus.style.color = 'var(--error-color)';
+        addLog(e.message, 'error');
+    }
+}
+
+async function logout() {
+    await chrome.storage.sync.remove(['authToken', 'authUser']);
+    showLoginScreen();
+    addLog('خروج انجام شد.');
+}
 
 // --- توابع اصلی ---
 async function fetchFunds() {
     try {
-        const response = await fetch(`${API_BASE_URL}/funds`);
+        const stored = await chrome.storage.sync.get('authToken');
+        const token = stored.authToken || '';
+        const response = await fetch(`${API_BASE_URL}/funds`, {
+            headers: { 'token': token }
+        });
         if (!response.ok) throw new Error('Server connection failed');
         const funds = await response.json();
         fundSelector.innerHTML = '<option value="">-- انتخاب کنید --</option>';
@@ -87,7 +159,11 @@ async function resetFund() {
     const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
     if (!activeFund) { updateStatus('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
     try {
-        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`);
+        const stored = await chrome.storage.sync.get('authToken');
+        const token = stored.authToken || '';
+        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
+            headers: { 'token': token }
+        });
         if (!response.ok) throw new Error('Could not get config for reset.');
         const config = await response.json();
         const startUrl = config.expert_price_page_url;
@@ -117,28 +193,41 @@ async function loadPersistedLogs() {
     } catch {}
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    fetchFunds();
-    loadPersistedLogs();
-    addLog('پنجره باز شد. در حال گوش دادن به لاگ‌ها...');
-    chrome.storage.local.get('last_notification', (data) => {
-        if (data.last_notification) {
-            adjustmentStatus.textContent = data.last_notification.message ? data.last_notification.message : 'اعلان آماده نمایش است';
-        } else {
-            adjustmentStatus.textContent = '-';
-        }
-    });
+// گوش دادن به پیام‌های ارسالی از content.js
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'LOG_MESSAGE') {
+        addLog(request.payload.message, request.payload.type);
+    } else if (request.type === 'OPEN_NEW_TAB') {
+        chrome.tabs.create({ url: request.url, active: true });
+    }
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkAuth();
+});
+
+// Login events
+loginBtn.addEventListener('click', login);
+loginPassword.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') login();
+});
+
+// Main interface events
 startBtn.addEventListener('click', setActiveFund);
 stopBtn.addEventListener('click', stopBot);
 resetBtn.addEventListener('click', resetFund);
 clearLogBtn.addEventListener('click', clearLogs);
 
+// دکمه‌های وضعیت تعدیل
 confirmAdjustedBtn?.addEventListener('click', async () => {
     try {
         const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
         if (!activeFund) { addLog('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
-        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`);
+        const stored = await chrome.storage.sync.get('authToken');
+        const token = stored.authToken || '';
+        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
+            headers: { 'token': token }
+        });
         if (!response.ok) throw new Error('Could not get config for recheck.');
         const config = await response.json();
         const dueAt = Date.now() + 2 * 60 * 1000; // 2 minutes later

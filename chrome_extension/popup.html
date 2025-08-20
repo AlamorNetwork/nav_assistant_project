@@ -45,35 +45,48 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <h3>صندوق فعال</h3>
-        <p>صندوقی که می‌خواهید نظارت شود را انتخاب کنید.</p>
-        <select id="fundSelector"></select>
-        <button id="setActiveFundBtn">روشن کردن / تغییر صندوق</button>
-        
-        <div class="controls">
-            <button id="stopBotBtn">خاموش کردن ربات</button>
-            <button id="resetFundBtn">ریست (در تب جدید)</button>
-        </div>
-        
-        <div id="status"></div>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="container">
+        <h3>🔐 ورود به سیستم</h3>
+        <p>لطفاً برای استفاده از اکستنشن وارد شوید:</p>
+        <input type="text" id="loginUsername" placeholder="نام کاربری">
+        <input type="password" id="loginPassword" placeholder="کلمه عبور">
+        <button id="loginBtn">ورود</button>
+        <div id="loginStatus"></div>
+    </div>
 
+    <!-- Main Interface -->
+    <div id="mainInterface" style="display: none;">
         <div class="container">
-            <h4>وضعیت تعدیل</h4>
-            <p id="adjustmentStatus">-</p>
+            <h3>صندوق فعال</h3>
+            <p>صندوقی که می‌خواهید نظارت شود را انتخاب کنید.</p>
+            <select id="fundSelector"></select>
+            <button id="setActiveFundBtn">روشن کردن / تغییر صندوق</button>
+            
             <div class="controls">
-                <button id="confirmAdjustedBtn">تعدیل زدم، دوباره چک کن</button>
-                <button id="showLastNotifBtn">نمایش آخرین اعلان</button>
+                <button id="stopBotBtn">خاموش کردن ربات</button>
+                <button id="resetFundBtn">ریست (در تب جدید)</button>
             </div>
-        </div>
+            
+            <div id="status"></div>
 
-        <!-- بخش جدید برای نمایش لاگ‌ها -->
-        <div class="log-container">
-            <div class="log-header">
-                <h4>لاگ‌های ربات</h4>
-                <button id="clearLogBtn">پاک کردن</button>
+            <div class="container">
+                <h4>وضعیت تعدیل</h4>
+                <p id="adjustmentStatus">-</p>
+                <div class="controls">
+                    <button id="confirmAdjustedBtn">تعدیل زدم، دوباره چک کن</button>
+                    <button id="showLastNotifBtn">نمایش آخرین اعلان</button>
+                </div>
             </div>
-            <div id="log-box"></div>
+
+            <!-- بخش جدید برای نمایش لاگ‌ها -->
+            <div class="log-container">
+                <div class="log-header">
+                    <h4>لاگ‌های ربات</h4>
+                    <button id="clearLogBtn">پاک کردن</button>
+                </div>
+                <div id="log-box"></div>
+            </div>
         </div>
     </div>
     <script src="popup.js"></script>

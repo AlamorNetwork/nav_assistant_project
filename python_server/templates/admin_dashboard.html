@@ -18,6 +18,7 @@
     .muted { color:#6b7280; }
     .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
     .grid-3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; }
+    .two-col { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
   </style>
 </head>
 <body>
@@ -76,15 +77,16 @@
       <h2>تمپلیت‌ها (سلکتورها)</h2>
       <div class="grid">
         <form action="/admin/update-template" method="post">
-          <h3>ثبت/ویرایش تمپلیت</h3>
+          <h3>ثبت/ویرایش تمپلیت با JSON</h3>
           <div class="row">
             <input class="col" type="text" name="template_name" placeholder="نام تمپلیت (مثلاً rayan یا tadbir)" required>
           </div>
           <div class="row">
-            <textarea name="template_data" rows="12" style="width:100%;" placeholder='{"tolerance":4, "nav_page_url":"...", "date_selector":"#navDate", ...}' required></textarea>
+            <textarea name="template_data" rows="12" style="width:100%;" placeholder='{"tolerance":4, "nav_page_url":"...", "date_selector":"#navDate", ...}' required>{{ tpl and tpl | tojson or '' }}</textarea>
           </div>
           <button type="submit">ذخیره تمپلیت</button>
         </form>
+
         <form action="/admin/apply-template" method="post">
           <h3>اعمال تمپلیت به صندوق</h3>
           <div class="row">
@@ -98,6 +100,27 @@
           <button type="submit">اعمال</button>
         </form>
       </div>
+    </div>
+
+    <div class="card">
+      <h3>ویرایش تمپلیت به سبک فرم (Field-wise)</h3>
+      <form class="two-col" action="/admin/upsert-template-fields" method="post">
+        <input type="text" name="name" placeholder="نام تمپلیت" value="{{ tpl and tpl['name'] or '' }}" required>
+        <input type="number" step="0.01" name="tolerance" placeholder="tolerance" value="{{ tpl and tpl['tolerance'] or '' }}">
+        <input type="text" name="nav_page_url" placeholder="nav_page_url" value="{{ tpl and tpl['nav_page_url'] or '' }}">
+        <input type="text" name="expert_price_page_url" placeholder="expert_price_page_url" value="{{ tpl and tpl['expert_price_page_url'] or '' }}">
+        <input type="text" name="date_selector" placeholder="date_selector" value="{{ tpl and tpl['date_selector'] or '' }}">
+        <input type="text" name="time_selector" placeholder="time_selector" value="{{ tpl and tpl['time_selector'] or '' }}">
+        <input type="text" name="nav_price_selector" placeholder="nav_price_selector" value="{{ tpl and tpl['nav_price_selector'] or '' }}">
+        <input type="text" name="total_units_selector" placeholder="total_units_selector" value="{{ tpl and tpl['total_units_selector'] or '' }}">
+        <input type="text" name="nav_search_button_selector" placeholder="nav_search_button_selector" value="{{ tpl and tpl['nav_search_button_selector'] or '' }}">
+        <input type="text" name="securities_list_selector" placeholder="securities_list_selector" value="{{ tpl and tpl['securities_list_selector'] or '' }}">
+        <input type="text" name="sellable_quantity_selector" placeholder="sellable_quantity_selector" value="{{ tpl and tpl['sellable_quantity_selector'] or '' }}">
+        <input type="text" name="expert_price_selector" placeholder="expert_price_selector" value="{{ tpl and tpl['expert_price_selector'] or '' }}">
+        <input type="text" name="increase_rows_selector" placeholder="increase_rows_selector" value="{{ tpl and tpl['increase_rows_selector'] or '' }}">
+        <input type="text" name="expert_search_button_selector" placeholder="expert_search_button_selector" value="{{ tpl and tpl['expert_search_button_selector'] or '' }}">
+        <button type="submit">ذخیره</button>
+      </form>
     </div>
   </div>
 </body>

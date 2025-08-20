@@ -90,4 +90,3 @@ cur.close(); conn.close()
 print("\n✅ PostgreSQL schema is ready.")
 
 
-

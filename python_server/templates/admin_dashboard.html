@@ -97,7 +97,11 @@
         <form action="/admin/apply-template" method="post">
           <h3>اعمال تمپلیت به صندوق</h3>
           <div class="row">
-            <input class="col" type="text" name="fund_name" placeholder="نام صندوق (دقیق)" required>
+            <select class="col" name="fund_name" required>
+              {% for f in funds %}
+              <option value="{{ f['name'] }}">{{ f['name'] }} ({{ f['type'] }})</option>
+              {% endfor %}
+            </select>
             <select class="col" name="template_name" required>
               {% for t in templates %}
               <option value="{{ t['name'] }}">{{ t['name'] }} (tol: {{ t['tolerance'] }})</option>

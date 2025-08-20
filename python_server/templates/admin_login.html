@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+	<meta charset="UTF-8">
+	<title>ورود پنل ادمین</title>
+	<style>
+		body { font-family: sans-serif; background:#f8f9fa; margin:0; padding:40px; }
+		.container { max-width: 420px; margin: 0 auto; background:#fff; padding:24px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.06); }
+		input, button { width:100%; padding:10px 12px; margin:8px 0; border-radius:8px; border:1px solid #ddd; }
+		button { background:#198754; color:#fff; border:none; cursor:pointer; }
+		button:hover { background:#157347; }
+		.error { color:#dc3545; margin-top:8px; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h2>🔐 ورود به پنل مدیریت</h2>
+		<form action="/login" method="post">
+			<input type="text" name="username" placeholder="نام کاربری" required>
+			<input type="password" name="password" placeholder="کلمه عبور" required>
+			<button type="submit">ورود</button>
+		</form>
+		{% if error %}
+		<p class="error">{{ error }}</p>
+		{% endif %}
+	</div>
+</body>
+</html>

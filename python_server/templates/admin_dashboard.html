@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <title>پنل مدیریت NAV Assistant</title>
+  <style>
+    body { font-family: sans-serif; background:#f5f6f8; margin:0; padding:24px; }
+    .wrap { max-width: 980px; margin: 0 auto; }
+    .card { background:#fff; padding:16px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.06); margin-bottom:16px; }
+    h2, h3 { margin: 8px 0 16px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:right; }
+    input, select, button { padding:8px 10px; border-radius:8px; border:1px solid #ddd; margin:6px 0; }
+    button { background:#0d6efd; color:#fff; border:none; cursor:pointer; }
+    button:hover { background:#0b5ed7; }
+    .row { display:flex; gap:12px; align-items:center; }
+    .col { flex:1; }
+    .muted { color:#6c757d; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2>مدیریت کاربران</h2>
+      <form action="/admin/create-user" method="post" class="row">
+        <input class="col" type="text" name="username" placeholder="نام کاربری" required>
+        <input class="col" type="password" name="password" placeholder="رمز" required>
+        <select class="col" name="role">
+          <option value="user">کاربر</option>
+          <option value="admin">ادمین</option>
+        </select>
+        <button type="submit">افزودن</button>
+      </form>
+      <table>
+        <thead><tr><th>نام کاربری</th><th>نقش</th><th>تاریخ ایجاد</th></tr></thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u['username'] }}</td>
+            <td>{{ u['role'] }}</td>
+            <td class="muted">{{ u['created_at'] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>مدیریت صندوق‌ها</h2>
+      <form action="/admin/create-fund" method="post" class="row">
+        <input class="col" type="text" name="name" placeholder="نام صندوق" required>
+        <input class="col" type="text" name="api_symbol" placeholder="شناسه API" required>
+        <select class="col" name="type">
+          <option value="rayan">رایان هم‌افزار</option>
+          <option value="tadbir">تدبیر رایان پرداز</option>
+        </select>
+        <button type="submit">افزودن</button>
+      </form>
+      <table>
+        <thead><tr><th>نام</th><th>نوع</th><th>شناسه</th></tr></thead>
+        <tbody>
+          {% for f in funds %}
+          <tr>
+            <td>{{ f['name'] }}</td>
+            <td>{{ f['type'] }}</td>
+            <td class="muted">{{ f['api_symbol'] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

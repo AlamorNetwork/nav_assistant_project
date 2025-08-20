@@ -27,9 +27,7 @@ CREATE TABLE IF NOT EXISTS funds (
     name VARCHAR(255) UNIQUE NOT NULL,
     api_symbol VARCHAR(255) NOT NULL,
     type VARCHAR(64) DEFAULT 'rayan',
-    owner_user_id INTEGER REFERENCES users(id),
-    nav_page_url TEXT,
-    expert_price_page_url TEXT
+    owner_user_id INTEGER REFERENCES users(id)
 );
 """)
 
@@ -72,6 +70,8 @@ cur.execute("""
 CREATE TABLE IF NOT EXISTS templates (
     name VARCHAR(255) PRIMARY KEY,
     tolerance DOUBLE PRECISION DEFAULT 4.0,
+    nav_page_url TEXT,
+    expert_price_page_url TEXT,
     date_selector TEXT,
     time_selector TEXT,
     nav_price_selector TEXT,
@@ -90,18 +90,3 @@ cur.close(); conn.close()
 print("\n✅ PostgreSQL schema is ready.")
 
 
-{
-  "tolerance": 4,
-  "nav_page_url": "https://example.com/nav",
-  "expert_price_page_url": "https://example.com/expert",
-  "date_selector": "#fund_nav_table > tbody > tr:nth-child(1) > td:nth-child(1) > p",
-  "time_selector": "#fund_nav_table > tbody > tr:nth-child(1) > td:nth-child(2) > p",
-  "nav_price_selector": "#fund_nav_table > tbody > tr:nth-child(1) > td:nth-child(11)",
-  "total_units_selector": "#fund_nav_table > tbody > tr:nth-child(1) > td:nth-child(9) > font",
-  "nav_search_button_selector": "body > table > tbody > tr:nth-child(2) > td > table > tbody > tr.caption > td.VNformheader > table > tbody > tr > td > form > table > tbody > tr:nth-child(11) > td > input[type=submit]",
-  "securities_list_selector": "#adjustedIpList > tbody > tr > td:nth-child(1)",
-  "sellable_quantity_selector": "#adjustedIpList > tbody > tr > td:nth-child(12)",
-  "expert_price_selector": "#adjustedIpList > tbody > tr > td:nth-child(3)",
-  "increase_rows_selector": "body > table:nth-child(1) > tbody > tr:nth-child(2) > td > table:nth-child(11) > tbody > tr > td.VNformheader > table > tbody > tr > td > form > table > tbody > tr:nth-child(10) > td > input[type=text]",
-  "expert_search_button_selector": "body > table:nth-child(1) > tbody > tr:nth-child(2) > td > table:nth-child(11) > tbody > tr > td.VNformheader > table > tbody > tr > td > form > table > tbody > tr:nth-child(9) > td > input[type=submit]"
-}

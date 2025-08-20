@@ -112,7 +112,7 @@ async def create_user(request: Request, username: str = Form(), password: str = 
     return RedirectResponse(url=f"/admin?message={message}", status_code=302)
 
 @app.post("/admin/create-fund")
-async def create_fund(request: Request, name: str = Form(), api_symbol: str = Form(), type: str = Form()):
+async def create_fund(request: Request, name: str = Form(), api_symbol: str = Form(), nav_page_url: str = Form(), expert_price_page_url: str = Form(), type: str = Form()):
     try:
         authenticate_admin(request)
     except HTTPException:
@@ -120,7 +120,7 @@ async def create_fund(request: Request, name: str = Form(), api_symbol: str = Fo
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            cur.execute("INSERT INTO funds (name, api_symbol, type) VALUES (%s, %s, %s)", (name, api_symbol, type))
+            cur.execute("INSERT INTO funds (name, api_symbol, type, nav_page_url, expert_price_page_url) VALUES (%s, %s, %s, %s, %s)", (name, api_symbol, type, nav_page_url, expert_price_page_url))
             conn.commit(); message = "Fund created successfully"
     except psycopg2.Error:
         message = "Fund name already exists"

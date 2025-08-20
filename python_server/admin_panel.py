@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
-import sqlite3, hashlib, secrets, json, os
+import sqlite3, hashlib, secrets, json, os, urllib.parse
 import psycopg2, psycopg2.extras
 from datetime import datetime
 
@@ -83,13 +83,15 @@ async def admin_dashboard(request: Request):
         conn.close()
     # Prepare JSON text for textarea to avoid template-side JSON filter issues
     tpl_json = json.dumps(dict(tpl)) if tpl else ""
+    message = request.query_params.get('message')
     return templates.TemplateResponse("admin_dashboard.html", {
         "request": request,
         "users": users,
         "funds": funds,
         "templates": tmpls,
         "tpl": tpl,
-        "tpl_json": tpl_json
+        "tpl_json": tpl_json,
+        "message": message
     })
 
 @app.post("/admin/create-user")
@@ -135,8 +137,9 @@ async def update_template(request: Request, template_name: str = Form(), templat
     # Parse JSON
     try:
         data = json.loads(template_data)
-    except Exception:
-        return RedirectResponse(url="/admin?message=Invalid JSON", status_code=302)
+    except Exception as e:
+        err = urllib.parse.quote(f"Invalid JSON: {str(e)[:120]}")
+        return RedirectResponse(url=f"/admin?message={err}", status_code=302)
     fields = {
         'tolerance': data.get('tolerance', 4.0),
         'nav_page_url': data.get('nav_page_url'),

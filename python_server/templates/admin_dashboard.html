@@ -23,6 +23,11 @@
 </head>
 <body>
   <div class="wrap">
+    {% if message %}
+    <div class="card" style="border-left:6px solid #2A623D;">
+      <div class="row"><div class="col">{{ message }}</div></div>
+    </div>
+    {% endif %}
     <div class="card">
       <h2>کاربران</h2>
       <form action="/admin/create-user" method="post" class="row">

@@ -72,8 +72,10 @@ async function addFund() {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'token': token },
             body: JSON.stringify({ name: name, api_symbol: symbol, type }),
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.detail);
+        const raw = await response.text();
+        let result = {};
+        try { result = raw ? JSON.parse(raw) : {}; } catch (e) {}
+        if (!response.ok) throw new Error(result.detail || raw || 'Server error');
         updateStatus(`صندوق '${name}' با موفقیت اضافه شد.`, 'success');
         document.getElementById('newFundName').value = '';
         document.getElementById('newFundSymbol').value = '';
@@ -108,8 +110,10 @@ async function saveConfiguration() {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'token': token },
             body: JSON.stringify(configData),
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.detail);
+        const raw = await response.text();
+        let result = {};
+        try { result = raw ? JSON.parse(raw) : {}; } catch (e) {}
+        if (!response.ok) throw new Error(result.detail || raw || 'Server error');
         updateStatus(`پیکربندی برای صندوق '${selectedFund}' ذخیره شد.`, 'success');
     } catch (error) { updateStatus(error.message, 'error'); }
 }

@@ -85,6 +85,14 @@ CREATE TABLE IF NOT EXISTS templates (
 );
 """)
 
+cur.execute("""
+CREATE TABLE IF NOT EXISTS user_funds (
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    fund_id INTEGER REFERENCES funds(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, fund_id)
+);
+""")
+
 conn.commit()
 cur.close(); conn.close()
 print("\n✅ PostgreSQL schema is ready.")

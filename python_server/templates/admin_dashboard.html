@@ -114,24 +114,44 @@
     </div>
 
     <div class="card">
-      <h3>ویرایش تمپلیت به سبک فرم (Field-wise)</h3>
-      <form class="two-col" action="/admin/upsert-template-fields" method="post">
-        <input type="text" name="name" placeholder="نام تمپلیت" value="{{ tpl and tpl['name'] or '' }}" required>
-        <input type="number" step="0.01" name="tolerance" placeholder="tolerance" value="{{ tpl and tpl['tolerance'] or '' }}">
-        <input type="text" name="nav_page_url" placeholder="nav_page_url" value="{{ tpl and tpl['nav_page_url'] or '' }}">
-        <input type="text" name="expert_price_page_url" placeholder="expert_price_page_url" value="{{ tpl and tpl['expert_price_page_url'] or '' }}">
-        <input type="text" name="date_selector" placeholder="date_selector" value="{{ tpl and tpl['date_selector'] or '' }}">
-        <input type="text" name="time_selector" placeholder="time_selector" value="{{ tpl and tpl['time_selector'] or '' }}">
-        <input type="text" name="nav_price_selector" placeholder="nav_price_selector" value="{{ tpl and tpl['nav_price_selector'] or '' }}">
-        <input type="text" name="total_units_selector" placeholder="total_units_selector" value="{{ tpl and tpl['total_units_selector'] or '' }}">
-        <input type="text" name="nav_search_button_selector" placeholder="nav_search_button_selector" value="{{ tpl and tpl['nav_search_button_selector'] or '' }}">
-        <input type="text" name="securities_list_selector" placeholder="securities_list_selector" value="{{ tpl and tpl['securities_list_selector'] or '' }}">
-        <input type="text" name="sellable_quantity_selector" placeholder="sellable_quantity_selector" value="{{ tpl and tpl['sellable_quantity_selector'] or '' }}">
-        <input type="text" name="expert_price_selector" placeholder="expert_price_selector" value="{{ tpl and tpl['expert_price_selector'] or '' }}">
-        <input type="text" name="increase_rows_selector" placeholder="increase_rows_selector" value="{{ tpl and tpl['increase_rows_selector'] or '' }}">
-        <input type="text" name="expert_search_button_selector" placeholder="expert_search_button_selector" value="{{ tpl and tpl['expert_search_button_selector'] or '' }}">
-        <button type="submit">ذخیره</button>
+      <h2>اساین صندوق به کاربر</h2>
+      <form action="/admin/assign-fund" method="post" class="row">
+        <select class="col" name="username" required>
+          {% for u in users %}
+          <option value="{{ u['username'] }}">{{ u['username'] }}</option>
+          {% endfor %}
+        </select>
+        <select class="col" name="fund_name" required>
+          {% for f in funds %}
+          <option value="{{ f['name'] }}">{{ f['name'] }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">اساین</button>
       </form>
+      <form action="/admin/unassign-fund" method="post" class="row">
+        <select class="col" name="username" required>
+          {% for u in users %}
+          <option value="{{ u['username'] }}">{{ u['username'] }}</option>
+          {% endfor %}
+        </select>
+        <select class="col" name="fund_name" required>
+          {% for f in funds %}
+          <option value="{{ f['name'] }}">{{ f['name'] }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">حذف اساین</button>
+      </form>
+      <table>
+        <thead><tr><th>کاربر</th><th>صندوق</th></tr></thead>
+        <tbody>
+          {% for uf in user_funds %}
+          <tr>
+            <td>{{ uf['username'] }}</td>
+            <td>{{ uf['fund_name'] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
 </body>

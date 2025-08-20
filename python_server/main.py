@@ -141,6 +141,15 @@ def authenticate(token: Optional[str] = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid token")
     return {"id": user['id'], "username": user['username'], "role": user['role']}
 
+def try_authenticate(token: Optional[str]):
+    if not token:
+        return None
+    try:
+        user = authenticate(token)  # will raise if invalid
+        return user
+    except Exception:
+        return None
+
 # --- API Endpoints ---
 @app.get("/")
 def read_root(): return {"status": "ok", "message": "NAV Assistant API is running"}
@@ -156,9 +165,22 @@ def add_fund(fund: Fund, user=Depends(authenticate)):
     return {"status": "success", "message": f"Fund '{fund.name}' added successfully."}
 
 @app.get("/funds")
-def get_funds():
-    funds = fetchall("SELECT * FROM funds ORDER BY name")
-    return funds
+def get_funds(token: Optional[str] = Header(None)):
+    user = try_authenticate(token)
+    if user and user.get('role') != 'admin':
+        # Return only funds assigned to this user
+        rows = fetchall(
+            """
+            SELECT f.* FROM user_funds uf
+            JOIN funds f ON uf.fund_id = f.id
+            WHERE uf.user_id = %s
+            ORDER BY f.name
+            """,
+            (user['id'],),
+        )
+        return rows
+    # Public or admin: return all funds
+    return fetchall("SELECT * FROM funds ORDER BY name")
 
 @app.post("/configurations")
 def save_configuration(config: Configuration, user=Depends(authenticate)):

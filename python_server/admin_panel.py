@@ -67,9 +67,9 @@ async def admin_dashboard(request: Request):
     conn = get_db_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT username, role, created_at FROM users ORDER BY username")
+            cur.execute("SELECT id, username, role, created_at FROM users ORDER BY username")
             users = cur.fetchall()
-            cur.execute("SELECT name, type, api_symbol FROM funds ORDER BY name")
+            cur.execute("SELECT id, name, type, api_symbol FROM funds ORDER BY name")
             funds = cur.fetchall()
             cur.execute("SELECT name, tolerance FROM templates ORDER BY name")
             tmpls = cur.fetchall()
@@ -79,6 +79,17 @@ async def admin_dashboard(request: Request):
             if edit_name:
                 cur.execute("SELECT * FROM templates WHERE name=%s", (edit_name,))
                 tpl = cur.fetchone()
+            # user-fund mappings
+            cur.execute(
+                """
+                SELECT u.username, f.name AS fund_name
+                FROM user_funds uf
+                JOIN users u ON uf.user_id=u.id
+                JOIN funds f ON uf.fund_id=f.id
+                ORDER BY u.username, f.name
+                """
+            )
+            user_funds = cur.fetchall()
     finally:
         conn.close()
     # Prepare JSON text for textarea to avoid template-side JSON filter issues
@@ -91,7 +102,8 @@ async def admin_dashboard(request: Request):
         "templates": tmpls,
         "tpl": tpl,
         "tpl_json": tpl_json,
-        "message": message
+        "message": message,
+        "user_funds": user_funds
     })
 
 @app.post("/admin/create-user")
@@ -253,6 +265,48 @@ async def apply_template(request: Request, fund_name: str = Form(), template_nam
     finally:
         conn.close()
     return RedirectResponse(url="/admin?message=Template applied", status_code=302)
+
+@app.post("/admin/assign-fund")
+async def assign_fund(request: Request, username: str = Form(), fund_name: str = Form()):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        return RedirectResponse(url="/", status_code=302)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username=%s", (username,))
+            u = cur.fetchone()
+            cur.execute("SELECT id FROM funds WHERE name=%s", (fund_name,))
+            f = cur.fetchone()
+            if not u or not f:
+                return RedirectResponse(url="/admin?message=User%20or%20Fund%20not%20found", status_code=302)
+            cur.execute("INSERT INTO user_funds (user_id, fund_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (u[0], f[0]))
+            conn.commit()
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin?message=Assigned", status_code=302)
+
+@app.post("/admin/unassign-fund")
+async def unassign_fund(request: Request, username: str = Form(), fund_name: str = Form()):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        return RedirectResponse(url="/", status_code=302)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM users WHERE username=%s", (username,))
+            u = cur.fetchone()
+            cur.execute("SELECT id FROM funds WHERE name=%s", (fund_name,))
+            f = cur.fetchone()
+            if not u or not f:
+                return RedirectResponse(url="/admin?message=User%20or%20Fund%20not%20found", status_code=302)
+            cur.execute("DELETE FROM user_funds WHERE user_id=%s AND fund_id=%s", (u[0], f[0]))
+            conn.commit()
+    finally:
+        conn.close()
+    return RedirectResponse(url="/admin?message=Unassigned", status_code=302)
 
 if __name__ == "__main__":
     import uvicorn

@@ -32,7 +32,6 @@ async def send_telegram_alert(message: str):
 # --- TSETMC Price Fetching Logic ---
 async def get_board_price(fund_name: str) -> float:
     headers = {'User-Agent': 'Mozilla/5.0'}
-    # *** BUG FIX ***: Added follow_redirects=True to handle HTTP to HTTPS redirects
     async with httpx.AsyncClient(follow_redirects=True) as client:
         try:
             search_url = f"http://old.tsetmc.com/tsev2/data/search.aspx?skey={fund_name}"
@@ -67,20 +66,32 @@ class Configuration(BaseModel):
 class CheckData(BaseModel):
     fund_name: str; nav_on_page: float; total_units: float
     sellable_quantity: Optional[float] = None; expert_price: Optional[float] = None
-
 class StaleAlert(BaseModel):
     fund_name: str
     last_nav_time: str
     age_seconds: float
-
 class UserCredentials(BaseModel):
     username: str
     password: str
-
 class User(BaseModel):
     username: str
     role: str = 'user'
     token: Optional[str] = None
+class TemplatePayload(BaseModel):
+    name: str
+    tolerance: Optional[float] = 4.0
+    nav_page_url: Optional[str] = None
+    expert_price_page_url: Optional[str] = None
+    date_selector: Optional[str] = None
+    time_selector: Optional[str] = None
+    nav_price_selector: Optional[str] = None
+    total_units_selector: Optional[str] = None
+    nav_search_button_selector: Optional[str] = None
+    securities_list_selector: Optional[str] = None
+    sellable_quantity_selector: Optional[str] = None
+    expert_price_selector: Optional[str] = None
+    increase_rows_selector: Optional[str] = None
+    expert_search_button_selector: Optional[str] = None
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode('utf-8')).hexdigest()
@@ -139,43 +150,6 @@ def get_configuration(fund_name: str):
     conn.close()
     if not config: raise HTTPException(status_code=404, detail=f"Configuration for '{fund_name}' not found.")
     return config
-
-@app.get("/templates")
-def get_templates():
-    # Default selectors for two vendor types
-    rayan = {
-        "name": "rayan",
-        "tolerance": 4.0,
-        "fields": {
-            "date_selector": "#navDate",
-            "time_selector": "#navTime",
-            "nav_price_selector": "#navPrice",
-            "total_units_selector": "#totalUnits",
-            "nav_search_button_selector": "#searchBtn",
-            "securities_list_selector": "#adjustedIpList > tbody > tr > td:nth-child(1)",
-            "sellable_quantity_selector": "td:nth-child(12)",
-            "expert_price_selector": "td:nth-child(3)",
-            "increase_rows_selector": "#pageSize",
-            "expert_search_button_selector": "#searchExpertBtn"
-        }
-    }
-    tadbir = {
-        "name": "tadbir",
-        "tolerance": 4.0,
-        "fields": {
-            "date_selector": "#navDate",
-            "time_selector": "#navTime",
-            "nav_price_selector": "#navPrice",
-            "total_units_selector": "#totalUnits",
-            "nav_search_button_selector": "#searchBtn",
-            "securities_list_selector": "#adjustedIpList > tbody > tr > td:nth-child(1)",
-            "sellable_quantity_selector": "td:nth-child(12)",
-            "expert_price_selector": "td:nth-child(3)",
-            "increase_rows_selector": "#pageSize",
-            "expert_search_button_selector": "#searchExpertBtn"
-        }
-    }
-    return {"templates": [rayan, tadbir]}
 
 @app.post("/check-nav")
 async def check_nav_logic(data: CheckData):
@@ -280,4 +254,48 @@ def create_user(creds: UserCredentials, user=Depends(authenticate)):
         conn.close()
         raise HTTPException(status_code=400, detail="Username already exists")
     conn.close()
+    return {"status": "success"}
+
+# --- Templates CRUD ---
+@app.get("/templates")
+def get_templates():
+    conn = get_db_connection()
+    rows = conn.execute("SELECT * FROM templates").fetchall()
+    conn.close()
+    return {"templates": [dict(r) for r in rows]}
+
+@app.post("/templates")
+def upsert_template(tmpl: TemplatePayload, user=Depends(authenticate)):
+    if user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admin can manage templates")
+    conn = get_db_connection()
+    existing = conn.execute("SELECT name FROM templates WHERE name=?", (tmpl.name,)).fetchone()
+    fields = (tmpl.tolerance, tmpl.nav_page_url, tmpl.expert_price_page_url, tmpl.date_selector, tmpl.time_selector, tmpl.nav_price_selector, tmpl.total_units_selector, tmpl.nav_search_button_selector, tmpl.securities_list_selector, tmpl.sellable_quantity_selector, tmpl.expert_price_selector, tmpl.increase_rows_selector, tmpl.expert_search_button_selector, tmpl.name)
+    if existing:
+        conn.execute("UPDATE templates SET tolerance=?, nav_page_url=?, expert_price_page_url=?, date_selector=?, time_selector=?, nav_price_selector=?, total_units_selector=?, nav_search_button_selector=?, securities_list_selector=?, sellable_quantity_selector=?, expert_price_selector=?, increase_rows_selector=?, expert_search_button_selector=? WHERE name=?", fields)
+    else:
+        conn.execute("INSERT INTO templates (tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", fields)
+    conn.commit()
+    conn.close()
+    return {"status": "success"}
+
+@app.post("/funds/apply-template")
+def apply_template_to_fund(fund_name: str, template_name: str, user=Depends(authenticate)):
+    conn = get_db_connection()
+    fund = conn.execute("SELECT id FROM funds WHERE name=?", (fund_name,)).fetchone()
+    if not fund: 
+        conn.close();
+        raise HTTPException(status_code=404, detail="Fund not found")
+    tmpl = conn.execute("SELECT * FROM templates WHERE name=?", (template_name,)).fetchone()
+    if not tmpl:
+        conn.close();
+        raise HTTPException(status_code=404, detail="Template not found")
+    existing_config = conn.execute("SELECT id FROM configurations WHERE fund_id=?", (fund['id'],)).fetchone()
+    if existing_config:
+        conn.execute("UPDATE configurations SET tolerance=?, nav_page_url=?, expert_price_page_url=?, date_selector=?, time_selector=?, nav_price_selector=?, total_units_selector=?, nav_search_button_selector=?, securities_list_selector=?, sellable_quantity_selector=?, expert_price_selector=?, increase_rows_selector=?, expert_search_button_selector=? WHERE fund_id=?",
+                     (tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector'], fund['id']))
+    else:
+        conn.execute("INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     (fund['id'], tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector']))
+    conn.commit(); conn.close()
     return {"status": "success"}

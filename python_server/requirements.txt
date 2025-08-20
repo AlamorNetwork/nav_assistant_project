@@ -3,3 +3,5 @@ uvicorn[standard]
 pydantic
 python-telegram-bot
 httpx
+Jinja2
+psycopg2-binary

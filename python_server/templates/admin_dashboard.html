@@ -2,26 +2,28 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <title>پنل مدیریت NAV Assistant</title>
+  <title>سبدگردان کاریزما - پنل مدیریت</title>
   <style>
-    body { font-family: sans-serif; background:#f5f6f8; margin:0; padding:24px; }
-    .wrap { max-width: 980px; margin: 0 auto; }
-    .card { background:#fff; padding:16px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.06); margin-bottom:16px; }
-    h2, h3 { margin: 8px 0 16px; }
+    body { font-family: sans-serif; background:#eef2f1; margin:0; padding:24px; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .card { background:#fff; padding:16px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.06); margin-bottom:16px; border:1px solid #e6e8ea; }
+    h2, h3 { margin: 8px 0 16px; color:#1f2937; border-bottom:2px solid #2A623D; padding-bottom:6px; }
     table { width:100%; border-collapse: collapse; }
     th, td { border-bottom:1px solid #eee; padding:8px; text-align:right; }
-    input, select, button { padding:8px 10px; border-radius:8px; border:1px solid #ddd; margin:6px 0; }
-    button { background:#0d6efd; color:#fff; border:none; cursor:pointer; }
-    button:hover { background:#0b5ed7; }
-    .row { display:flex; gap:12px; align-items:center; }
-    .col { flex:1; }
-    .muted { color:#6c757d; }
+    input, select, textarea, button { padding:10px 12px; border-radius:8px; border:1px solid #d1d5db; margin:6px 0; font-family: inherit; }
+    button { background:#2A623D; color:#fff; border:none; cursor:pointer; }
+    button:hover { background:#1A472A; }
+    .row { display:flex; gap:12px; align-items:center; flex-wrap: wrap; }
+    .col { flex:1; min-width: 200px; }
+    .muted { color:#6b7280; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; }
+    .grid-3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
-      <h2>مدیریت کاربران</h2>
+      <h2>کاربران</h2>
       <form action="/admin/create-user" method="post" class="row">
         <input class="col" type="text" name="username" placeholder="نام کاربری" required>
         <input class="col" type="password" name="password" placeholder="رمز" required>
@@ -46,7 +48,7 @@
     </div>
 
     <div class="card">
-      <h2>مدیریت صندوق‌ها</h2>
+      <h2>صندوق‌ها</h2>
       <form action="/admin/create-fund" method="post" class="row">
         <input class="col" type="text" name="name" placeholder="نام صندوق" required>
         <input class="col" type="text" name="api_symbol" placeholder="شناسه API" required>
@@ -68,6 +70,34 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+
+    <div class="card">
+      <h2>تمپلیت‌ها (سلکتورها)</h2>
+      <div class="grid">
+        <form action="/admin/update-template" method="post">
+          <h3>ثبت/ویرایش تمپلیت</h3>
+          <div class="row">
+            <input class="col" type="text" name="template_name" placeholder="نام تمپلیت (مثلاً rayan یا tadbir)" required>
+          </div>
+          <div class="row">
+            <textarea name="template_data" rows="12" style="width:100%;" placeholder='{"tolerance":4, "nav_page_url":"...", "date_selector":"#navDate", ...}' required></textarea>
+          </div>
+          <button type="submit">ذخیره تمپلیت</button>
+        </form>
+        <form action="/admin/apply-template" method="post">
+          <h3>اعمال تمپلیت به صندوق</h3>
+          <div class="row">
+            <input class="col" type="text" name="fund_name" placeholder="نام صندوق (دقیق)" required>
+            <select class="col" name="template_name" required>
+              {% for t in templates %}
+              <option value="{{ t['name'] }}">{{ t['name'] }} (tol: {{ t['tolerance'] }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit">اعمال</button>
+        </form>
+      </div>
     </div>
   </div>
 </body>

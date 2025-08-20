@@ -3,90 +3,90 @@
 
 /* Define color variables and basic styles */
 :root {
-    --primary-color: #007BFF;
-    --primary-hover: #0056b3;
-    --secondary-color: #6c757d;
-    --background-color: #f8f9fa;
-    --surface-color: #ffffff;
-    --text-color: #212529;
-    --border-color: #dee2e6;
-    --success-color: #28a745;
-    --error-color: #dc3545;
-    --font-family: 'Vazirmatn', sans-serif;
+	--primary-color: #2A623D; /* Slytherin green */
+	--primary-hover: #1A472A;
+	--secondary-color: #5D5D5D;
+	--background-color: #f0f2f5;
+	--surface-color: #ffffff;
+	--text-color: #1f2937;
+	--border-color: #e5e7eb;
+	--success-color: #2A9D57;
+	--error-color: #dc3545;
+	--font-family: 'Vazirmatn', sans-serif;
 }
 
 body {
-    font-family: var(--font-family);
-    background-color: var(--background-color);
-    color: var(--text-color);
-    margin: 0;
-    direction: rtl;
+	font-family: var(--font-family);
+	background-color: var(--background-color);
+	color: var(--text-color);
+	margin: 0;
+	direction: rtl;
 }
 
 /* General UI Components */
 .container {
-    background-color: var(--surface-color);
-    padding: 25px;
-    border-radius: 12px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--border-color);
-    animation: fadeIn 0.5s ease-in-out;
+	background-color: var(--surface-color);
+	padding: 25px;
+	border-radius: 12px;
+	margin-bottom: 20px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+	border: 1px solid var(--border-color);
+	animation: fadeIn 0.5s ease-in-out;
 }
 
-h2, h3 {
-    color: var(--text-color);
-    border-bottom: 2px solid var(--primary-color);
-    padding-bottom: 10px;
-    margin-top: 0;
+h2, h3, h4 {
+	color: var(--text-color);
+	border-bottom: 2px solid var(--primary-color);
+	padding-bottom: 10px;
+	margin-top: 0;
 }
 
-input[type="text"], select {
-    width: calc(100% - 20px);
-    padding: 12px 10px;
-    margin-bottom: 15px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-size: 1rem;
-    transition: all 0.3s ease;
+input[type="text"], input[type="password"], select {
+	width: calc(100% - 20px);
+	padding: 12px 10px;
+	margin-bottom: 15px;
+	border: 1px solid var(--border-color);
+	border-radius: 8px;
+	font-size: 1rem;
+	transition: all 0.3s ease;
 }
 
-input[type="text"]:focus, select:focus {
-    outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+input[type="text"]:focus, input[type="password"]:focus, select:focus {
+	outline: none;
+	border-color: var(--primary-color);
+	box-shadow: 0 0 0 3px rgba(42, 98, 61, 0.25);
 }
 
 button {
-    background-color: var(--primary-color);
-    color: white;
-    padding: 12px 20px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 500;
-    transition: all 0.3s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
+	background-color: var(--primary-color);
+	color: white;
+	padding: 12px 20px;
+	border: none;
+	border-radius: 8px;
+	cursor: pointer;
+	font-size: 1rem;
+	font-weight: 500;
+	transition: all 0.3s ease;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
 }
 
 button:hover {
-    background-color: var(--primary-hover);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+	background-color: var(--primary-hover);
+	transform: translateY(-2px);
+	box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
 #status, #connectionStatus {
-    margin-top: 20px;
-    font-weight: 500;
-    padding: 12px;
-    border-radius: 8px;
-    text-align: center;
+	margin-top: 20px;
+	font-weight: 500;
+	padding: 12px;
+	border-radius: 8px;
+	text-align: center;
 }
 #connectionStatus {
-    margin-right: 15px;
-    vertical-align: middle;
-    padding: 5px 10px;
+	margin-right: 15px;
+	vertical-align: middle;
+	padding: 5px 10px;
 }

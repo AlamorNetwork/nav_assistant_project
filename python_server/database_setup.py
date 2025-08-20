@@ -86,6 +86,26 @@ try:
 except Exception:
     pass
 
+# --- Table 4: templates (selector templates keyed by name) ---
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS templates (
+    name TEXT PRIMARY KEY,
+    tolerance REAL DEFAULT 4.0,
+    nav_page_url TEXT,
+    expert_price_page_url TEXT,
+    date_selector TEXT,
+    time_selector TEXT,
+    nav_price_selector TEXT,
+    total_units_selector TEXT,
+    nav_search_button_selector TEXT,
+    securities_list_selector TEXT,
+    sellable_quantity_selector TEXT,
+    expert_price_selector TEXT,
+    increase_rows_selector TEXT,
+    expert_search_button_selector TEXT
+)
+''')
+
 conn.commit()
 conn.close()
 print("\n✅ Database 'platform_data.db' and its tables are ready.")

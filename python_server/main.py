@@ -1,7 +1,8 @@
-import sqlite3
+import os
+import psycopg2
+import psycopg2.extras
 import httpx
 import telegram
-import os
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -48,11 +49,42 @@ async def get_board_price(fund_name: str) -> float:
             print(f"[price] Error fetching board price for {fund_name}: {e}")
             return 0.0
 
-# --- DB Connection ---
+# --- DB (PostgreSQL) Connection & helpers ---
+DB_URL = os.getenv("DB_URL")  # e.g., postgresql://user:pass@host:5432/dbname
+
 def get_db_connection():
-    conn = sqlite3.connect('platform_data.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+    if not DB_URL:
+        raise RuntimeError("DB_URL environment variable is not set for PostgreSQL connection")
+    return psycopg2.connect(DB_URL)
+
+def fetchone(sql: str, params: tuple = ()):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            return row
+    finally:
+        conn.close()
+
+def fetchall(sql: str, params: tuple = ()):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            return rows
+    finally:
+        conn.close()
+
+def execute(sql: str, params: tuple = ()):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            conn.commit()
+    finally:
+        conn.close()
 
 # --- Pydantic Models ---
 class Fund(BaseModel): name: str; api_symbol: str; type: Optional[str] = 'rayan'
@@ -112,49 +144,43 @@ def read_root(): return {"status": "ok", "message": "NAV Assistant API is runnin
 
 @app.post("/funds")
 def add_fund(fund: Fund, user=Depends(authenticate)):
-    conn = get_db_connection()
     try:
-        conn.execute("INSERT INTO funds (name, api_symbol, type, owner_user_id) VALUES (?, ?, ?, ?)", (fund.name, fund.api_symbol, fund.type or 'rayan', user['id']))
-        conn.commit()
-    except sqlite3.IntegrityError: raise HTTPException(status_code=400, detail=f"Fund '{fund.name}' already exists.")
-    finally: conn.close()
+        execute("INSERT INTO funds (name, api_symbol, type, owner_user_id) VALUES (%s, %s, %s, %s)", (fund.name, fund.api_symbol, fund.type or 'rayan', user['id']))
+    except Exception as e:
+        if 'duplicate key' in str(e).lower():
+            raise HTTPException(status_code=400, detail=f"Fund '{fund.name}' already exists.")
+        raise
     return {"status": "success", "message": f"Fund '{fund.name}' added successfully."}
 
 @app.get("/funds")
 def get_funds():
-    conn = get_db_connection(); funds = conn.execute("SELECT * FROM funds ORDER BY name").fetchall(); conn.close(); return funds
+    funds = fetchall("SELECT * FROM funds ORDER BY name")
+    return funds
 
 @app.post("/configurations")
 def save_configuration(config: Configuration, user=Depends(authenticate)):
-    conn = get_db_connection()
-    fund = conn.execute("SELECT id, owner_user_id FROM funds WHERE name = ?", (config.fund_name,)).fetchone()
+    fund = fetchone("SELECT id, owner_user_id FROM funds WHERE name = %s", (config.fund_name,))
     if not fund: raise HTTPException(status_code=404, detail=f"Fund '{config.fund_name}' not found.")
     if fund['owner_user_id'] and fund['owner_user_id'] != user['id'] and user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Not allowed to modify this fund")
     fund_id = fund['id']
-    existing_config = conn.execute("SELECT id FROM configurations WHERE fund_id = ?", (fund_id,)).fetchone()
+    existing_config = fetchone("SELECT id FROM configurations WHERE fund_id = %s", (fund_id,))
     if existing_config:
-        conn.execute("""UPDATE configurations SET tolerance=?, nav_page_url=?, expert_price_page_url=?, date_selector=?, time_selector=?, nav_price_selector=?, total_units_selector=?, nav_search_button_selector=?, securities_list_selector=?, sellable_quantity_selector=?, expert_price_selector=?, increase_rows_selector=?, expert_search_button_selector=? WHERE fund_id = ?""",
-                     (config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector, fund_id))
+        execute("""UPDATE configurations SET tolerance=%s, nav_page_url=%s, expert_price_page_url=%s, date_selector=%s, time_selector=%s, nav_price_selector=%s, total_units_selector=%s, nav_search_button_selector=%s, securities_list_selector=%s, sellable_quantity_selector=%s, expert_price_selector=%s, increase_rows_selector=%s, expert_search_button_selector=%s WHERE fund_id = %s""",
+                (config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector, fund_id))
     else:
-        conn.execute("""INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                     (fund_id, config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector))
-    conn.commit()
-    conn.close()
+        execute("""INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (fund_id, config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector))
     return {"status": "success", "message": f"Configuration for '{config.fund_name}' saved."}
 
 @app.get("/configurations/{fund_name}")
 def get_configuration(fund_name: str):
-    conn = get_db_connection()
-    config = conn.execute("SELECT c.*, f.api_symbol, f.type as fund_type FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = ?", (fund_name,)).fetchone()
-    conn.close()
+    config = fetchone("SELECT c.*, f.api_symbol, f.type as fund_type FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = %s", (fund_name,))
     if not config: raise HTTPException(status_code=404, detail=f"Configuration for '{fund_name}' not found.")
     return config
 
 @app.post("/check-nav")
 async def check_nav_logic(data: CheckData):
-    conn = get_db_connection()
-    
     config = get_configuration(data.fund_name)
     
     fund_id = config['fund_id']
@@ -173,7 +199,6 @@ async def check_nav_logic(data: CheckData):
     )
 
     if diff < tolerance:
-        conn.close()
         return {
             "status": "ok",
             "message": "Difference is within tolerance.",
@@ -185,7 +210,6 @@ async def check_nav_logic(data: CheckData):
     status_message = "Adjustment Needed"
     
     if data.sellable_quantity is None or data.expert_price is None or data.sellable_quantity == 0:
-        conn.close()
         return {
             "status": "adjustment_needed_more_data_required",
             "message": "Difference is high, but data for calculation is missing.",
@@ -205,10 +229,8 @@ async def check_nav_logic(data: CheckData):
     await send_telegram_alert(alert_message)
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    conn.execute("""INSERT INTO logs (fund_id, timestamp, nav_on_page, total_units, sellable_quantity, expert_price, board_price, suggested_price, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                 (fund_id, timestamp, data.nav_on_page, data.total_units, data.sellable_quantity, data.expert_price, board_price, suggested_price, status_message))
-    conn.commit()
-    conn.close()
+    execute("""INSERT INTO logs (fund_id, timestamp, nav_on_page, total_units, sellable_quantity, expert_price, board_price, suggested_price, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (fund_id, timestamp, data.nav_on_page, data.total_units, data.sellable_quantity, data.expert_price, board_price, suggested_price, status_message))
     
     print(f"[check-nav] suggested_nav={suggested_price:.2f} status={status_message}")
     return {
@@ -231,71 +253,56 @@ async def alert_stale_nav(alert: StaleAlert):
 
 @app.post("/auth/login")
 def login(creds: UserCredentials):
-    conn = get_db_connection()
-    row = conn.execute("SELECT id, username, password_hash, role FROM users WHERE username = ?", (creds.username,)).fetchone()
+    row = fetchone("SELECT id, username, password_hash, role FROM users WHERE username = %s", (creds.username,))
     if not row or row['password_hash'] != hash_password(creds.password):
-        conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = secrets.token_hex(16)
-    conn.execute("UPDATE users SET token = ? WHERE id = ?", (token, row['id']))
-    conn.commit()
-    conn.close()
+    execute("UPDATE users SET token = %s WHERE id = %s", (token, row['id']))
     return {"token": token, "username": row['username'], "role": row['role']}
 
 @app.post("/auth/create-user")
 def create_user(creds: UserCredentials, user=Depends(authenticate)):
     if user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Only admin can create users")
-    conn = get_db_connection()
     try:
-        conn.execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)", (creds.username, hash_password(creds.password), 'user', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Username already exists")
-    conn.close()
+        execute("INSERT INTO users (username, password_hash, role, created_at) VALUES (%s, %s, %s, %s)", (creds.username, hash_password(creds.password), 'user', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    except Exception as e:
+        if 'duplicate key' in str(e).lower():
+            raise HTTPException(status_code=400, detail="Username already exists")
+        raise
     return {"status": "success"}
 
 # --- Templates CRUD ---
 @app.get("/templates")
 def get_templates():
-    conn = get_db_connection()
-    rows = conn.execute("SELECT * FROM templates").fetchall()
-    conn.close()
+    rows = fetchall("SELECT * FROM templates")
     return {"templates": [dict(r) for r in rows]}
 
 @app.post("/templates")
 def upsert_template(tmpl: TemplatePayload, user=Depends(authenticate)):
     if user['role'] != 'admin':
         raise HTTPException(status_code=403, detail="Only admin can manage templates")
-    conn = get_db_connection()
-    existing = conn.execute("SELECT name FROM templates WHERE name=?", (tmpl.name,)).fetchone()
+    existing = fetchone("SELECT name FROM templates WHERE name=%s", (tmpl.name,))
     fields = (tmpl.tolerance, tmpl.nav_page_url, tmpl.expert_price_page_url, tmpl.date_selector, tmpl.time_selector, tmpl.nav_price_selector, tmpl.total_units_selector, tmpl.nav_search_button_selector, tmpl.securities_list_selector, tmpl.sellable_quantity_selector, tmpl.expert_price_selector, tmpl.increase_rows_selector, tmpl.expert_search_button_selector, tmpl.name)
     if existing:
-        conn.execute("UPDATE templates SET tolerance=?, nav_page_url=?, expert_price_page_url=?, date_selector=?, time_selector=?, nav_price_selector=?, total_units_selector=?, nav_search_button_selector=?, securities_list_selector=?, sellable_quantity_selector=?, expert_price_selector=?, increase_rows_selector=?, expert_search_button_selector=? WHERE name=?", fields)
+        execute("UPDATE templates SET tolerance=%s, nav_page_url=%s, expert_price_page_url=%s, date_selector=%s, time_selector=%s, nav_price_selector=%s, total_units_selector=%s, nav_search_button_selector=%s, securities_list_selector=%s, sellable_quantity_selector=%s, expert_price_selector=%s, increase_rows_selector=%s, expert_search_button_selector=%s WHERE name=%s", fields)
     else:
-        conn.execute("INSERT INTO templates (tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector, name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", fields)
-    conn.commit()
-    conn.close()
+        execute("INSERT INTO templates (tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector, name) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", fields)
     return {"status": "success"}
 
 @app.post("/funds/apply-template")
 def apply_template_to_fund(fund_name: str, template_name: str, user=Depends(authenticate)):
-    conn = get_db_connection()
-    fund = conn.execute("SELECT id FROM funds WHERE name=?", (fund_name,)).fetchone()
+    fund = fetchone("SELECT id FROM funds WHERE name=%s", (fund_name,))
     if not fund: 
-        conn.close();
         raise HTTPException(status_code=404, detail="Fund not found")
-    tmpl = conn.execute("SELECT * FROM templates WHERE name=?", (template_name,)).fetchone()
+    tmpl = fetchone("SELECT * FROM templates WHERE name=%s", (template_name,))
     if not tmpl:
-        conn.close();
         raise HTTPException(status_code=404, detail="Template not found")
-    existing_config = conn.execute("SELECT id FROM configurations WHERE fund_id=?", (fund['id'],)).fetchone()
+    existing_config = fetchone("SELECT id FROM configurations WHERE fund_id=%s", (fund['id'],))
     if existing_config:
-        conn.execute("UPDATE configurations SET tolerance=?, nav_page_url=?, expert_price_page_url=?, date_selector=?, time_selector=?, nav_price_selector=?, total_units_selector=?, nav_search_button_selector=?, securities_list_selector=?, sellable_quantity_selector=?, expert_price_selector=?, increase_rows_selector=?, expert_search_button_selector=? WHERE fund_id=?",
-                     (tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector'], fund['id']))
+        execute("UPDATE configurations SET tolerance=%s, nav_page_url=%s, expert_price_page_url=%s, date_selector=%s, time_selector=%s, nav_price_selector=%s, total_units_selector=%s, nav_search_button_selector=%s, securities_list_selector=%s, sellable_quantity_selector=%s, expert_price_selector=%s, increase_rows_selector=%s, expert_search_button_selector=%s WHERE fund_id=%s",
+                (tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector'], fund['id']))
     else:
-        conn.execute("INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                     (fund['id'], tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector']))
-    conn.commit(); conn.close()
+        execute("INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (fund['id'], tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector']))
     return {"status": "success"}

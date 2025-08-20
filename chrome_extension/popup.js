@@ -1,24 +1,9 @@
 const API_BASE_URL = 'https://respina.irplatforme.ir';
-const fundSelector = document.getElementById('fundSelector');
-const statusDiv = document.getElementById('status');
-const startBtn = document.getElementById('setActiveFundBtn');
-const stopBtn = document.getElementById('stopBotBtn');
-const resetBtn = document.getElementById('resetFundBtn');
-const logBox = document.getElementById('log-box');
-const clearLogBtn = document.getElementById('clearLogBtn');
-const confirmAdjustedBtn = document.getElementById('confirmAdjustedBtn');
-const showLastNotifBtn = document.getElementById('showLastNotifBtn');
-const adjustmentStatus = document.getElementById('adjustmentStatus');
-const logoutBtn = document.getElementById('logoutBtn');
-const closeTabsBtn = document.getElementById('closeTabsBtn');
 
-// Login elements
-const loginScreen = document.getElementById('loginScreen');
-const mainInterface = document.getElementById('mainInterface');
-const loginBtn = document.getElementById('loginBtn');
-const loginUsername = document.getElementById('loginUsername');
-const loginPassword = document.getElementById('loginPassword');
-const loginStatus = document.getElementById('loginStatus');
+// DOM elements - will be initialized after DOM loads
+let fundSelector, statusDiv, startBtn, stopBtn, resetBtn, logBox, clearLogBtn;
+let confirmAdjustedBtn, showLastNotifBtn, adjustmentStatus, logoutBtn, closeTabsBtn;
+let loginScreen, mainInterface, loginBtn, loginUsername, loginPassword, loginStatus;
 
 // --- مدیریت لاگ ---
 function renderLogEntry(entry) {
@@ -55,17 +40,28 @@ async function checkAuth() {
                 headers: { 'token': stored.authToken }
             });
             addLog(`Token validation response: ${response.status}`);
+            if (response.status === 401 || response.status === 403) {
+                addLog('Token invalid or expired. Clearing auth and showing login.', 'warn');
+                await chrome.storage.sync.remove(['authToken', 'authUser']);
+                showLoginScreen();
+                return false;
+            }
+
             if (response.ok) {
                 showMainInterface();
                 addLog(`Authenticated as ${stored.authUser.username}`);
                 return true;
-            } else {
-                addLog('Token validation failed, clearing stored auth', 'warn');
-                await chrome.storage.sync.remove(['authToken', 'authUser']);
             }
+
+            // Non-OK but not unauthorized: keep the session, show main UI
+            addLog('Token validation returned non-OK status, keeping session.', 'warn');
+            showMainInterface();
+            return true;
         } catch (e) {
-            addLog(`Token validation error: ${e.message}`, 'error');
-            await chrome.storage.sync.remove(['authToken', 'authUser']);
+            // Network or transient error: do NOT clear auth; keep user logged in
+            addLog(`Token validation error (keeping session): ${e.message}`, 'warn');
+            showMainInterface();
+            return true;
         }
     }
     showLoginScreen();
@@ -73,16 +69,21 @@ async function checkAuth() {
 }
 
 function showLoginScreen() {
-    loginScreen.style.display = 'block';
-    mainInterface.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'block';
+    if (mainInterface) mainInterface.style.display = 'none';
 }
 
 function showMainInterface() {
-    loginScreen.style.display = 'none';
-    mainInterface.style.display = 'block';
+    if (loginScreen) loginScreen.style.display = 'none';
+    if (mainInterface) mainInterface.style.display = 'block';
 }
 
 async function login() {
+    if (!loginStatus || !loginUsername) {
+        console.error('Login elements not found');
+        return;
+    }
+    
     loginStatus.textContent = '⏳ در حال ورود...';
     loginStatus.style.color = 'var(--secondary-color)';
     try {
@@ -121,9 +122,11 @@ async function login() {
         });
         
         addLog(`Login successful for ${result.username} (${result.role})`, 'success');
-        loginStatus.textContent = '✅ ورود موفق';
-        loginStatus.style.color = 'var(--success-color)';
-        loginPassword.value = '';
+        if (loginStatus) {
+            loginStatus.textContent = '✅ ورود موفق';
+            loginStatus.style.color = 'var(--success-color)';
+        }
+        if (loginPassword) loginPassword.value = '';
         
         setTimeout(() => {
             showMainInterface();
@@ -133,8 +136,10 @@ async function login() {
         }, 1000);
         
     } catch (e) {
-        loginStatus.textContent = '❌ ورود ناموفق';
-        loginStatus.style.color = 'var(--error-color)';
+        if (loginStatus) {
+            loginStatus.textContent = '❌ ورود ناموفق';
+            loginStatus.style.color = 'var(--error-color)';
+        }
         addLog(`Login error: ${e.message}`, 'error');
     }
 }
@@ -207,13 +212,15 @@ async function fetchFunds() {
             throw new Error('Invalid JSON from /funds'); 
         }
         
-        fundSelector.innerHTML = '<option value="">-- انتخاب کنید --</option>';
-        funds.forEach(fund => {
-            const option = document.createElement('option');
-            option.value = fund.name;
-            option.textContent = `${fund.name} (${fund.type || 'unknown'})`;
-            fundSelector.appendChild(option);
-        });
+        if (fundSelector) {
+            fundSelector.innerHTML = '<option value="">-- انتخاب کنید --</option>';
+            funds.forEach(fund => {
+                const option = document.createElement('option');
+                option.value = fund.name;
+                option.textContent = `${fund.name} (${fund.type || 'unknown'})`;
+                fundSelector.appendChild(option);
+            });
+        }
         
         if (!funds.length) {
             if (user) {
@@ -227,11 +234,11 @@ async function fetchFunds() {
         
         chrome.storage.sync.get('activeFund', async (data) => {
             if (data.activeFund) {
-                fundSelector.value = data.activeFund;
+                if (fundSelector) fundSelector.value = data.activeFund;
                 
                 // Get bot-managed tabs count
-                const stored = await chrome.storage.local.get('botManagedTabs');
-                const botManagedTabs = stored.botManagedTabs || [];
+                const botStored = await chrome.storage.local.get('botManagedTabs');
+                const botManagedTabs = botStored.botManagedTabs || [];
                 
                 updateStatus(`ربات برای صندوق ${data.activeFund} فعال است. (${botManagedTabs.length} تب مدیریت شده)`, 'success');
             } else {
@@ -253,8 +260,8 @@ async function setActiveFund() {
     
     try {
         // Get fund configuration to open the correct URL
-        const stored = await chrome.storage.sync.get('authToken');
-        const token = stored.authToken || '';
+        const authStored = await chrome.storage.sync.get('authToken');
+        const token = authStored.authToken || '';
         const response = await fetch(`${API_BASE_URL}/configurations/${selectedFund}`, {
             headers: { 'token': token }
         });
@@ -280,8 +287,8 @@ async function setActiveFund() {
         const newTab = await chrome.tabs.create({ url: navUrl, active: true });
         
         // Mark this tab as bot-managed
-        const stored = await chrome.storage.local.get('botManagedTabs');
-        const botManagedTabs = stored.botManagedTabs || [];
+        const botStored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = botStored.botManagedTabs || [];
         botManagedTabs.push(newTab.id);
         await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
         
@@ -323,8 +330,8 @@ async function resetFund() {
     }
     
     try {
-        const stored = await chrome.storage.sync.get('authToken');
-        const token = stored.authToken || '';
+        const authStored = await chrome.storage.sync.get('authToken');
+        const token = authStored.authToken || '';
         const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
             headers: { 'token': token }
         });
@@ -346,8 +353,8 @@ async function resetFund() {
         const newTab = await chrome.tabs.create({ url: expertUrl, active: true });
         
         // Mark this tab as bot-managed
-        const stored = await chrome.storage.local.get('botManagedTabs');
-        const botManagedTabs = stored.botManagedTabs || [];
+        const botStored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = botStored.botManagedTabs || [];
         botManagedTabs.push(newTab.id);
         await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
         
@@ -361,6 +368,7 @@ async function resetFund() {
 }
 
 function updateStatus(message, type) {
+    if (!statusDiv) return;
     const colors = { error: 'var(--error-color)', success: 'var(--success-color)', neutral: 'var(--secondary-color)' };
     const bgColors = { error: '#f8d7da', success: '#d4edda', neutral: '#e2e3e5' };
     statusDiv.textContent = message;
@@ -368,14 +376,40 @@ function updateStatus(message, type) {
     statusDiv.style.backgroundColor = bgColors[type] || 'transparent';
 }
 
+// --- DOM Initialization ---
+function initializeDOMElements() {
+    fundSelector = document.getElementById('fundSelector');
+    statusDiv = document.getElementById('status');
+    startBtn = document.getElementById('setActiveFundBtn');
+    stopBtn = document.getElementById('stopBotBtn');
+    resetBtn = document.getElementById('resetFundBtn');
+    logBox = document.getElementById('log-box');
+    clearLogBtn = document.getElementById('clearLogBtn');
+    confirmAdjustedBtn = document.getElementById('confirmAdjustedBtn');
+    showLastNotifBtn = document.getElementById('showLastNotifBtn');
+    adjustmentStatus = document.getElementById('adjustmentStatus');
+    logoutBtn = document.getElementById('logoutBtn');
+    closeTabsBtn = document.getElementById('closeTabsBtn');
+    
+    // Login elements
+    loginScreen = document.getElementById('loginScreen');
+    mainInterface = document.getElementById('mainInterface');
+    loginBtn = document.getElementById('loginBtn');
+    loginUsername = document.getElementById('loginUsername');
+    loginPassword = document.getElementById('loginPassword');
+    loginStatus = document.getElementById('loginStatus');
+}
+
 // --- Event Listeners ---
 async function loadPersistedLogs() {
     try {
         const stored = await new Promise(resolve => chrome.storage.local.get('nav_logs', resolve));
         const logs = Array.isArray(stored.nav_logs) ? stored.nav_logs : [];
-        logBox.innerHTML = '';
-        logs.forEach(renderLogEntry);
-        logBox.scrollTop = logBox.scrollHeight;
+        if (logBox) {
+            logBox.innerHTML = '';
+            logs.forEach(renderLogEntry);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
     } catch {}
 }
 
@@ -389,61 +423,78 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize DOM elements first
+    initializeDOMElements();
+    
+    // Set up event listeners
+    setupEventListeners();
+    
+    // Load logs and check auth
     await loadPersistedLogs();
     await checkAuth();
 });
 
-// Login events
-loginBtn.addEventListener('click', login);
-loginPassword.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') login();
-});
+function setupEventListeners() {
+    // Login events
+    if (loginBtn) {
+        loginBtn.addEventListener('click', login);
+    }
+    if (loginPassword) {
+        loginPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+    }
 
-// Main interface events
-startBtn.addEventListener('click', setActiveFund);
-stopBtn.addEventListener('click', stopBot);
-resetBtn.addEventListener('click', resetFund);
-clearLogBtn.addEventListener('click', clearLogs);
-closeTabsBtn.addEventListener('click', closeNavAssistantTabs);
-logoutBtn.addEventListener('click', logout);
+    // Main interface events
+    if (startBtn) startBtn.addEventListener('click', setActiveFund);
+    if (stopBtn) stopBtn.addEventListener('click', stopBot);
+    if (resetBtn) resetBtn.addEventListener('click', resetFund);
+    if (clearLogBtn) clearLogBtn.addEventListener('click', clearLogs);
+    if (closeTabsBtn) closeTabsBtn.addEventListener('click', closeNavAssistantTabs);
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+}
 
 // دکمه‌های وضعیت تعدیل
-confirmAdjustedBtn?.addEventListener('click', async () => {
-    try {
-        const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
-        if (!activeFund) { addLog('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
-        const stored = await chrome.storage.sync.get('authToken');
-        const token = stored.authToken || '';
-        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
-            headers: { 'token': token }
-        });
-        if (!response.ok) throw new Error('Could not get config for recheck.');
-        const config = await response.json();
-        const dueAt = Date.now() + 2 * 60 * 1000; // 2 minutes later
-        await new Promise(resolve => chrome.storage.local.set({ postAdjustmentActive: true, postAdjustmentCheckDueAt: dueAt }, resolve));
-        await new Promise(resolve => chrome.storage.local.remove(['last_notification', 'needsExpertData', 'navSearchClicked'], resolve));
-        adjustmentStatus.textContent = '-';
-        chrome.tabs.create({ url: config.nav_page_url, active: true });
-        addLog('کاربر تایید کرد که تعدیل انجام شده. در حال چک مجدد...', 'success');
-    } catch (e) {
-        addLog(e.message || 'خطا در شروع بررسی مجدد.', 'error');
-    }
-});
+if (confirmAdjustedBtn) {
+    confirmAdjustedBtn.addEventListener('click', async () => {
+        try {
+            const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
+            if (!activeFund) { addLog('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
+            const stored = await chrome.storage.sync.get('authToken');
+            const token = stored.authToken || '';
+            const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
+                headers: { 'token': token }
+            });
+            if (!response.ok) throw new Error('Could not get config for recheck.');
+            const config = await response.json();
+            const dueAt = Date.now() + 2 * 60 * 1000; // 2 minutes later
+            await new Promise(resolve => chrome.storage.local.set({ postAdjustmentActive: true, postAdjustmentCheckDueAt: dueAt }, resolve));
+            await new Promise(resolve => chrome.storage.local.remove(['last_notification', 'needsExpertData', 'navSearchClicked'], resolve));
+            if (adjustmentStatus) adjustmentStatus.textContent = '-';
+            chrome.tabs.create({ url: config.nav_page_url, active: true });
+            addLog('کاربر تایید کرد که تعدیل انجام شده. در حال چک مجدد...', 'success');
+        } catch (e) {
+            addLog(e.message || 'خطا در شروع بررسی مجدد.', 'error');
+        }
+    });
+}
 
-showLastNotifBtn?.addEventListener('click', () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const tabId = tabs[0]?.id;
-        if (!tabId) return;
-        chrome.storage.local.get('last_notification', (data) => {
-            if (!data.last_notification) { addLog('اعلان ذخیره‌شده‌ای وجود ندارد.'); return; }
-            chrome.scripting.executeScript({
-                target: { tabId },
-                func: (opts) => {
-                    const ev = new CustomEvent('NAV_ASSISTANT_SHOW_NOTIFICATION', { detail: opts });
-                    window.dispatchEvent(ev);
-                },
-                args: [data.last_notification]
+if (showLastNotifBtn) {
+    showLastNotifBtn.addEventListener('click', () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const tabId = tabs[0]?.id;
+            if (!tabId) return;
+            chrome.storage.local.get('last_notification', (data) => {
+                if (!data.last_notification) { addLog('اعلان ذخیره‌شده‌ای وجود ندارد.'); return; }
+                chrome.scripting.executeScript({
+                    target: { tabId },
+                    func: (opts) => {
+                        const ev = new CustomEvent('NAV_ASSISTANT_SHOW_NOTIFICATION', { detail: opts });
+                        window.dispatchEvent(ev);
+                    },
+                    args: [data.last_notification]
+                });
             });
         });
     });
-});
+}

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>تست اکستنشن NAV</title>
+    <style>
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d5a27 50%, #1a1a1a 100%);
+            color: #c0c0c0;
+            padding: 20px;
+            direction: rtl;
+        }
+        .test-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(45, 90, 39, 0.8);
+            padding: 30px;
+            border-radius: 15px;
+            border: 2px solid #d4af37;
+        }
+        h1 {
+            color: #d4af37;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background: rgba(26, 26, 26, 0.6);
+            border-radius: 10px;
+            border: 1px solid #4a4a4a;
+        }
+        .test-button {
+            background: linear-gradient(145deg, #d4af37, #b8941f);
+            color: #1a1a1a;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: linear-gradient(145deg, #b8941f, #d4af37);
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+        .success { background: rgba(72, 187, 120, 0.2); border: 1px solid #48bb78; }
+        .error { background: rgba(245, 101, 101, 0.2); border: 1px solid #f56565; }
+        .info { background: rgba(66, 153, 225, 0.2); border: 1px solid #4299e1; }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🐍 تست اکستنشن سبدگردان کاریزما</h1>
+        
+        <div class="test-section">
+            <h3>تست اتصال به سرور</h3>
+            <button class="test-button" onclick="testServerConnection()">تست اتصال</button>
+            <div id="serverStatus" class="status"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>تست احراز هویت</h3>
+            <input type="text" id="testUsername" placeholder="نام کاربری" style="margin: 5px; padding: 8px; border-radius: 5px; border: 1px solid #4a4a4a; background: rgba(26, 26, 26, 0.8); color: #c0c0c0;">
+            <input type="password" id="testPassword" placeholder="رمز عبور" style="margin: 5px; padding: 8px; border-radius: 5px; border: 1px solid #4a4a4a; background: rgba(26, 26, 26, 0.8); color: #c0c0c0;">
+            <button class="test-button" onclick="testLogin()">تست ورود</button>
+            <div id="loginStatus" class="status"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>تست دریافت صندوق‌ها</h3>
+            <button class="test-button" onclick="testGetFunds()">دریافت صندوق‌ها</button>
+            <div id="fundsStatus" class="status"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>وضعیت کلی</h3>
+            <div id="overallStatus" class="status info">
+                آماده برای تست...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://respina.irplatforme.ir';
+        
+        function updateStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.className = `status ${type}`;
+        }
+        
+        async function testServerConnection() {
+            updateStatus('serverStatus', 'در حال تست اتصال...', 'info');
+            try {
+                const response = await fetch(`${API_BASE_URL}/funds`);
+                if (response.ok) {
+                    updateStatus('serverStatus', '✅ اتصال به سرور موفق', 'success');
+                } else {
+                    updateStatus('serverStatus', `❌ خطا در اتصال: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                updateStatus('serverStatus', `❌ خطا در اتصال: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testLogin() {
+            const username = document.getElementById('testUsername').value;
+            const password = document.getElementById('testPassword').value;
+            
+            if (!username || !password) {
+                updateStatus('loginStatus', '❌ لطفاً نام کاربری و رمز عبور را وارد کنید', 'error');
+                return;
+            }
+            
+            updateStatus('loginStatus', 'در حال تست ورود...', 'info');
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const result = await response.text();
+                if (response.ok) {
+                    const data = JSON.parse(result);
+                    updateStatus('loginStatus', `✅ ورود موفق - کاربر: ${data.username}`, 'success');
+                } else {
+                    updateStatus('loginStatus', `❌ ورود ناموفق: ${result}`, 'error');
+                }
+            } catch (error) {
+                updateStatus('loginStatus', `❌ خطا در ورود: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testGetFunds() {
+            updateStatus('fundsStatus', 'در حال دریافت صندوق‌ها...', 'info');
+            try {
+                const response = await fetch(`${API_BASE_URL}/funds`);
+                if (response.ok) {
+                    const funds = await response.json();
+                    updateStatus('fundsStatus', `✅ ${funds.length} صندوق دریافت شد`, 'success');
+                } else {
+                    updateStatus('fundsStatus', `❌ خطا در دریافت صندوق‌ها: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                updateStatus('fundsStatus', `❌ خطا در دریافت صندوق‌ها: ${error.message}`, 'error');
+            }
+        }
+        
+        // تست اولیه اتصال
+        window.onload = function() {
+            testServerConnection();
+        };
+    </script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 const API_BASE_URL = 'https://respina.irplatforme.ir';
-let TEST_MODE = true; // حالت پیش‌فرض؛ می‌تواند بر اساس صندوق غیرفعال/فعال شود
+let TEST_MODE = false; // حالت پیش‌فرض؛ می‌تواند بر اساس صندوق غیرفعال/فعال شود
 const MAX_PERSISTED_LOGS = 500;
 let monitoringInterval = null;
 let monitoringIntervalMs = 120000; // 2m inside market hours

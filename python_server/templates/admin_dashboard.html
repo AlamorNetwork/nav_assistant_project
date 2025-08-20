@@ -82,7 +82,7 @@
             <input class="col" type="text" name="template_name" placeholder="نام تمپلیت (مثلاً rayan یا tadbir)" required>
           </div>
           <div class="row">
-            <textarea name="template_data" rows="12" style="width:100%;" placeholder='{"tolerance":4, "nav_page_url":"...", "date_selector":"#navDate", ...}' required>{{ tpl and tpl | tojson or '' }}</textarea>
+            <textarea name="template_data" rows="12" style="width:100%;" placeholder='{"tolerance":4, "nav_page_url":"...", "date_selector":"#navDate", ...}' required>{{ tpl_json }}</textarea>
           </div>
           <button type="submit">ذخیره تمپلیت</button>
         </form>

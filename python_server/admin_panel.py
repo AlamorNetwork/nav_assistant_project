@@ -81,12 +81,15 @@ async def admin_dashboard(request: Request):
                 tpl = cur.fetchone()
     finally:
         conn.close()
+    # Prepare JSON text for textarea to avoid template-side JSON filter issues
+    tpl_json = json.dumps(dict(tpl)) if tpl else ""
     return templates.TemplateResponse("admin_dashboard.html", {
         "request": request,
         "users": users,
         "funds": funds,
         "templates": tmpls,
-        "tpl": tpl
+        "tpl": tpl,
+        "tpl_json": tpl_json
     })
 
 @app.post("/admin/create-user")

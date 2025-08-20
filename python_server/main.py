@@ -135,11 +135,15 @@ def authenticate(token: Optional[str] = Header(None)):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
     conn = get_db_connection()
-    user = conn.execute("SELECT id, username, role FROM users WHERE token = ?", (token,)).fetchone()
-    conn.close()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return {"id": user['id'], "username": user['username'], "role": user['role']}
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, username, role FROM users WHERE token = %s", (token,))
+            user = cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return {"id": user['id'], "username": user['username'], "role": user['role']}
+    finally:
+        conn.close()
 
 def try_authenticate(token: Optional[str]):
     if not token:

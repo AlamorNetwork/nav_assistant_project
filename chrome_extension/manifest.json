@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NAV Assistant",
+  "name": "🐍 سبدگردان کاریزما - دستیار NAV",
   "version": "1.0.0",
-  "description": "Smart monitoring and management of investment fund NAV.",
+  "description": "اکستنشن مدیریت صندوق سبدگردان کاریزما - نظارت هوشمند بر NAV",
   "permissions": [
     "storage",
     "tabs",

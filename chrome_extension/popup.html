@@ -2,46 +2,200 @@
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>دستیار NAV</title>
+    <title>🐍 سبدگردان کاریزما - دستیار NAV</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        body { width: 380px; } /* کمی بزرگتر برای نمایش لاگ */
-        .container { padding: 20px; margin-bottom: 0;}
-        .controls { display: flex; justify-content: space-between; margin-top: 15px; }
-        .controls button { flex-grow: 1; margin: 0 5px; padding: 8px; font-size: 0.9rem; }
-        #stopBotBtn { background-color: var(--error-color); }
-        #resetFundBtn { background-color: var(--secondary-color); }
+        body { 
+            width: 400px; 
+            min-height: 500px;
+            background: linear-gradient(135deg, var(--slytherin-dark) 0%, var(--slytherin-emerald) 50%, var(--slytherin-dark) 100%);
+        }
         
-        /* استایل‌های جدید برای بخش لاگ */
+        /* Custom popup-specific styles */
+        .container { 
+            padding: 20px; 
+            margin-bottom: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .controls { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-top: 15px;
+            gap: 8px;
+        }
+        
+        .controls button { 
+            flex-grow: 1; 
+            margin: 0; 
+            padding: 10px 12px; 
+            font-size: 12px;
+            min-width: 100px;
+        }
+        
+        /* Enhanced log container */
         .log-container {
             margin-top: 20px;
-            border-top: 1px solid var(--border-color);
-            padding-top: 10px;
+            border-top: 2px solid var(--border-color);
+            padding-top: 15px;
+            background: linear-gradient(145deg, var(--slytherin-black), var(--slytherin-dark-gray));
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
         }
+        
         .log-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
         }
-        .log-header h4 { margin: 0; }
-        #clearLogBtn { font-size: 0.8rem; padding: 4px 8px; background-color: var(--secondary-color); }
+        
+        .log-header h4 { 
+            margin: 0; 
+            color: var(--slytherin-gold);
+            font-size: 14px;
+        }
+        
+        #clearLogBtn { 
+            font-size: 10px; 
+            padding: 6px 10px; 
+            background: linear-gradient(145deg, var(--slytherin-silver), #a8a8a8);
+            color: var(--slytherin-black);
+            border-radius: 6px;
+        }
+        
         #log-box {
-            background-color: #2d3748; /* پس‌زمینه تیره */
-            color: #e2e8f0; /* متن روشن */
-            font-family: monospace;
-            font-size: 0.8rem;
-            height: 150px;
+            background: linear-gradient(145deg, var(--slytherin-black), #1a1a1a);
+            color: var(--slytherin-silver);
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            height: 120px;
             overflow-y: auto;
-            padding: 10px;
-            border-radius: 8px;
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--slytherin-gray);
             white-space: pre-wrap;
             word-break: break-all;
         }
-        .log-entry { margin: 0 0 5px 0; }
-        .log-entry.error { color: #f56565; } /* قرمز برای خطا */
-        .log-entry.success { color: #48bb78; } /* سبز برای موفقیت */
-        .log-entry.warn { color: #ecc94b; } /* زرد برای هشدار */
+        
+        .log-entry { 
+            margin: 0 0 6px 0; 
+            padding: 2px 0;
+            border-left: 2px solid transparent;
+            padding-left: 6px;
+        }
+        
+        .log-entry.error { 
+            color: #f56565; 
+            border-left-color: #f56565;
+            background: rgba(245, 101, 101, 0.1);
+        }
+        
+        .log-entry.success { 
+            color: #48bb78; 
+            border-left-color: #48bb78;
+            background: rgba(72, 187, 120, 0.1);
+        }
+        
+        .log-entry.warn { 
+            color: var(--slytherin-gold); 
+            border-left-color: var(--slytherin-gold);
+            background: rgba(212, 175, 55, 0.1);
+        }
+        
+        /* Login screen enhancements */
+        #loginScreen {
+            text-align: center;
+            background: linear-gradient(145deg, var(--card-background), var(--slytherin-dark-gray));
+            border: 2px solid var(--border-color);
+            border-radius: 15px;
+            margin: 15px;
+            padding: 25px;
+        }
+        
+        #loginScreen h3 {
+            color: var(--slytherin-gold);
+            font-size: 20px;
+            margin-bottom: 20px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        #loginScreen p {
+            color: var(--slytherin-silver);
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        #loginScreen input {
+            width: 100%;
+            margin-bottom: 15px;
+            background: linear-gradient(145deg, var(--slytherin-gray), var(--slytherin-dark-gray));
+            border: 2px solid var(--border-color);
+            color: var(--slytherin-silver);
+        }
+        
+        #loginBtn {
+            width: 100%;
+            margin-top: 10px;
+            background: linear-gradient(145deg, var(--slytherin-gold), #b8941f);
+            color: var(--slytherin-black);
+            font-weight: bold;
+            font-size: 16px;
+            padding: 15px;
+            border-radius: 25px;
+        }
+        
+        /* Main interface enhancements */
+        #mainInterface .container {
+            background: linear-gradient(145deg, var(--card-background), var(--slytherin-dark-gray));
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+        }
+        
+        #mainInterface h3 {
+            color: var(--slytherin-silver);
+            border-bottom: 2px solid var(--slytherin-green);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+        
+        #mainInterface p {
+            color: var(--slytherin-silver);
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+        
+        #fundSelector {
+            width: 100%;
+            margin-bottom: 15px;
+            background: linear-gradient(145deg, var(--slytherin-gray), var(--slytherin-dark-gray));
+            border: 2px solid var(--border-color);
+            color: var(--slytherin-silver);
+        }
+        
+        /* Status enhancements */
+        #status, #loginStatus {
+            margin: 15px 0;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-align: center;
+            border-left: 4px solid;
+        }
+        
+        /* Adjustment status section */
+        #adjustmentStatus {
+            background: linear-gradient(145deg, var(--slytherin-gray), var(--slytherin-dark-gray));
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 10px;
+            margin: 10px 0;
+            color: var(--slytherin-silver);
+            font-family: monospace;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -66,6 +220,7 @@
             <div class="controls">
                 <button id="stopBotBtn">خاموش کردن ربات</button>
                 <button id="resetFundBtn">ریست (در تب جدید)</button>
+                <button id="closeTabsBtn" style="background-color: #6c757d;">بستن تب‌های ربات</button>
                 <button id="logoutBtn" style="background-color: #dc3545;">خروج</button>
             </div>
             

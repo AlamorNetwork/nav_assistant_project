@@ -191,7 +191,28 @@ async function checkSingleFund(fund) {
         if (!isOnExpertPage) {
             log(`در صفحه اشتباه. باز کردن تب جدید قیمت کارشناسی برای ${fund.name}...`);
             const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
-            try { if (expertUrl) window.open(expertUrl, '_blank'); } catch {}
+            try { 
+                if (expertUrl) {
+                    // Open new tab and mark it as bot-managed
+                    const newTab = window.open(expertUrl, '_blank');
+                    if (newTab) {
+                        // We'll mark this tab as bot-managed when it loads
+                        setTimeout(async () => {
+                            try {
+                                const stored = await chrome.storage.local.get('botManagedTabs');
+                                const botManagedTabs = stored.botManagedTabs || [];
+                                // We can't get the tab ID from window.open, so we'll mark it by URL
+                                await chrome.storage.local.set({ 
+                                    botManagedTabs: botManagedTabs,
+                                    pendingBotTab: expertUrl 
+                                });
+                            } catch (e) {
+                                log(`خطا در ثبت تب جدید: ${e.message}`, 'error');
+                            }
+                        }, 1000);
+                    }
+                }
+            } catch {}
             return;
         }
         if (!localState[`listExpanded_${fund.name}`]) {
@@ -268,7 +289,28 @@ async function checkSingleFund(fund) {
                 });
                 log(`نیاز به تعدیل برای ${fund.name}. در حال انتقال...`);
                 const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
-                try { if (expertUrl) window.open(expertUrl, '_blank'); } catch {}
+                try { 
+                    if (expertUrl) {
+                        // Open new tab and mark it as bot-managed
+                        const newTab = window.open(expertUrl, '_blank');
+                        if (newTab) {
+                            // We'll mark this tab as bot-managed when it loads
+                            setTimeout(async () => {
+                                try {
+                                    const stored = await chrome.storage.local.get('botManagedTabs');
+                                    const botManagedTabs = stored.botManagedTabs || [];
+                                    // We can't get the tab ID from window.open, so we'll mark it by URL
+                                    await chrome.storage.local.set({ 
+                                        botManagedTabs: botManagedTabs,
+                                        pendingBotTab: expertUrl 
+                                    });
+                                } catch (e) {
+                                    log(`خطا در ثبت تب جدید: ${e.message}`, 'error');
+                                }
+                            }, 1000);
+                        }
+                    }
+                } catch {}
             }
             
             // --- Staleness check: تاریخ/زمان NAV لحظه‌ای ---
@@ -438,10 +480,119 @@ async function checkSingleFund(fund) {
     }
 }
 
+// --- Tab Management ---
+let isActiveTab = false;
+let tabId = null;
+let isBotManagedTab = false;
+
+async function checkIfActiveTab() {
+    try {
+        // Get current tab info
+        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tabs.length > 0) {
+            tabId = tabs[0].id;
+            isActiveTab = true;
+            log(`تب فعال شناسایی شد: ${tabId}`, 'info');
+        } else {
+            isActiveTab = false;
+        }
+    } catch (e) {
+        log(`خطا در بررسی تب فعال: ${e.message}`, 'error');
+        isActiveTab = false;
+    }
+}
+
+async function checkIfBotManagedTab() {
+    try {
+        // Check if this tab was opened by the bot
+        const stored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = stored.botManagedTabs || [];
+        
+        if (tabId && botManagedTabs.includes(tabId)) {
+            isBotManagedTab = true;
+            log(`تب ${tabId} توسط ربات مدیریت می‌شود.`, 'info');
+        } else {
+            isBotManagedTab = false;
+            log(`تب ${tabId} توسط کاربر باز شده است.`, 'warn');
+        }
+    } catch (e) {
+        log(`خطا در بررسی تب مدیریت شده: ${e.message}`, 'error');
+        isBotManagedTab = false;
+    }
+}
+
+async function shouldRunOnThisTab() {
+    // Check if this tab is active
+    await checkIfActiveTab();
+    
+    // Check if this tab is managed by the bot
+    await checkIfBotManagedTab();
+    
+    // Only run on bot-managed tabs
+    if (!isBotManagedTab) {
+        log("این تب توسط کاربر باز شده است. ربات روی آن کار نمی‌کند.", 'info');
+        return false;
+    }
+    
+    // Get active fund from storage
+    const stored = await chrome.storage.sync.get('activeFund');
+    const activeFund = stored.activeFund;
+    
+    if (!activeFund) {
+        log("هیچ صندوق فعالی یافت نشد.", 'warn');
+        return false;
+    }
+    
+    // Get fund configuration to check URLs
+    try {
+        const authStored = await chrome.storage.sync.get('authToken');
+        const token = authStored.authToken || '';
+        const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
+            headers: { 'token': token }
+        });
+        
+        if (!response.ok) {
+            log(`خطا در دریافت تنظیمات صندوق ${activeFund}`, 'error');
+            return false;
+        }
+        
+        const config = await response.json();
+        const currentUrl = window.location.href;
+        
+        // Check if current URL matches any of the fund's configured URLs
+        const navUrl = config.fund_nav_page_url || config.nav_page_url;
+        const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
+        
+        const isNavPage = navUrl && areUrlsMatching(currentUrl, navUrl);
+        const isExpertPage = expertUrl && areUrlsMatching(currentUrl, expertUrl);
+        
+        if (isNavPage || isExpertPage) {
+            log(`صفحه مطابق با صندوق ${activeFund} یافت شد: ${isNavPage ? 'NAV' : 'Expert'}`, 'info');
+            return true;
+        } else {
+            log(`صفحه فعلی با صندوق ${activeFund} مطابقت ندارد.`, 'warn');
+            return false;
+        }
+        
+    } catch (e) {
+        log(`خطا در بررسی URL: ${e.message}`, 'error');
+        return false;
+    }
+}
+
 // --- Startup and Listeners ---
 async function startMonitoring() {
     await sleep(2000);
+    
+    // Check if we should run on this tab
+    const shouldRun = await shouldRunOnThisTab();
+    if (!shouldRun) {
+        log("ربات در این تب اجرا نمی‌شود.", 'info');
+        return;
+    }
+    
     if (monitoringInterval) clearInterval(monitoringInterval);
+    
     // بازیابی نوتیف ذخیره‌شده (اگر قبلاً کاربر ندیده باشد)
     try {
         const stored = await chrome.storage.local.get('last_notification');
@@ -449,11 +600,20 @@ async function startMonitoring() {
             await showNotification(stored.last_notification);
         }
     } catch {}
+    
     // نرخ پایش تابع ساعات بازار است
     const now = new Date();
     monitoringIntervalMs = isMarketOpen(now) ? 120000 : 600000; // 2m داخل بازار، 10m خارج بازار
     performCheck();
-    monitoringInterval = setInterval(() => {
+    monitoringInterval = setInterval(async () => {
+        // Check again if we should still run on this tab
+        const shouldStillRun = await shouldRunOnThisTab();
+        if (!shouldStillRun) {
+            log("ربات متوقف شد - تب دیگر فعال نیست یا URL تغییر کرده.", 'warn');
+            clearInterval(monitoringInterval);
+            return;
+        }
+        
         const t = new Date();
         const desired = isMarketOpen(t) ? 120000 : 600000;
         if (desired !== monitoringIntervalMs) {
@@ -466,7 +626,44 @@ async function startMonitoring() {
     log("نظارت ربات شروع شد.", 'success');
 }
 
-startMonitoring();
+// Function to check if this tab should be marked as bot-managed
+async function checkPendingBotTab() {
+    try {
+        const stored = await chrome.storage.local.get('pendingBotTab');
+        if (stored.pendingBotTab) {
+            const currentUrl = window.location.href;
+            if (areUrlsMatching(currentUrl, stored.pendingBotTab)) {
+                // This tab was opened by the bot, mark it as bot-managed
+                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+                if (tabs.length > 0) {
+                    const currentTabId = tabs[0].id;
+                    const botStored = await chrome.storage.local.get('botManagedTabs');
+                    const botManagedTabs = botStored.botManagedTabs || [];
+                    if (!botManagedTabs.includes(currentTabId)) {
+                        botManagedTabs.push(currentTabId);
+                        await chrome.storage.local.set({ 
+                            botManagedTabs: botManagedTabs,
+                            pendingBotTab: null 
+                        });
+                        log(`تب ${currentTabId} به عنوان تب مدیریت شده توسط ربات ثبت شد.`, 'success');
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        log(`خطا در بررسی تب در انتظار: ${e.message}`, 'error');
+    }
+}
+
+// Only start monitoring if this is a relevant tab
+shouldRunOnThisTab().then(shouldRun => {
+    if (shouldRun) {
+        startMonitoring();
+    } else {
+        // Check if this tab should be marked as bot-managed
+        checkPendingBotTab();
+    }
+});
 
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync' && changes.activeFund) {

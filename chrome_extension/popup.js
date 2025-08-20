@@ -10,6 +10,7 @@ const confirmAdjustedBtn = document.getElementById('confirmAdjustedBtn');
 const showLastNotifBtn = document.getElementById('showLastNotifBtn');
 const adjustmentStatus = document.getElementById('adjustmentStatus');
 const logoutBtn = document.getElementById('logoutBtn');
+const closeTabsBtn = document.getElementById('closeTabsBtn');
 
 // Login elements
 const loginScreen = document.getElementById('loginScreen');
@@ -144,6 +145,29 @@ async function logout() {
     addLog('خروج انجام شد.');
 }
 
+// Function to close all NAV assistant tabs
+async function closeNavAssistantTabs() {
+    try {
+        // Get bot-managed tabs
+        const stored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = stored.botManagedTabs || [];
+        
+        if (botManagedTabs.length > 0) {
+            // Close only bot-managed tabs
+            await chrome.tabs.remove(botManagedTabs);
+            
+            // Clear the list
+            await chrome.storage.local.set({ botManagedTabs: [] });
+            
+            addLog(`${botManagedTabs.length} تب مدیریت شده توسط ربات بسته شد.`, 'info');
+        } else {
+            addLog('هیچ تب مدیریت شده‌ای یافت نشد.', 'info');
+        }
+    } catch (error) {
+        addLog(`خطا در بستن تب‌ها: ${error.message}`, 'error');
+    }
+}
+
 // --- توابع اصلی ---
 async function fetchFunds() {
     try {
@@ -201,10 +225,15 @@ async function fetchFunds() {
             updateStatus(`${funds.length} صندوق یافت شد.`, 'success');
         }
         
-        chrome.storage.sync.get('activeFund', (data) => {
+        chrome.storage.sync.get('activeFund', async (data) => {
             if (data.activeFund) {
                 fundSelector.value = data.activeFund;
-                updateStatus(`ربات برای صندوق ${data.activeFund} فعال است.`, 'success');
+                
+                // Get bot-managed tabs count
+                const stored = await chrome.storage.local.get('botManagedTabs');
+                const botManagedTabs = stored.botManagedTabs || [];
+                
+                updateStatus(`ربات برای صندوق ${data.activeFund} فعال است. (${botManagedTabs.length} تب مدیریت شده)`, 'success');
             } else {
                 updateStatus('ربات خاموش است.', 'neutral');
             }
@@ -215,40 +244,120 @@ async function fetchFunds() {
     }
 }
 
-function setActiveFund() {
+async function setActiveFund() {
     const selectedFund = fundSelector.value;
-    if (!selectedFund) { updateStatus('لطفاً یک صندوق را انتخاب کنید.', 'error'); return; }
-    chrome.storage.local.clear(() => {
-        chrome.storage.sync.set({ activeFund: selectedFund }, () => {
-            updateStatus(`ربات برای صندوق ${selectedFund} فعال شد.`, 'success');
+    if (!selectedFund) { 
+        updateStatus('لطفاً یک صندوق را انتخاب کنید.', 'error'); 
+        return; 
+    }
+    
+    try {
+        // Get fund configuration to open the correct URL
+        const stored = await chrome.storage.sync.get('authToken');
+        const token = stored.authToken || '';
+        const response = await fetch(`${API_BASE_URL}/configurations/${selectedFund}`, {
+            headers: { 'token': token }
         });
-    });
+        
+        if (!response.ok) {
+            updateStatus('خطا در دریافت تنظیمات صندوق.', 'error');
+            return;
+        }
+        
+        const config = await response.json();
+        const navUrl = config.fund_nav_page_url || config.nav_page_url;
+        
+        if (!navUrl) {
+            updateStatus('URL صفحه NAV برای این صندوق تنظیم نشده.', 'error');
+            return;
+        }
+        
+        // Clear storage and set active fund
+        await new Promise(resolve => chrome.storage.local.clear(resolve));
+        await new Promise(resolve => chrome.storage.sync.set({ activeFund: selectedFund }, resolve));
+        
+        // Open the NAV page in a new tab
+        const newTab = await chrome.tabs.create({ url: navUrl, active: true });
+        
+        // Mark this tab as bot-managed
+        const stored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = stored.botManagedTabs || [];
+        botManagedTabs.push(newTab.id);
+        await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
+        
+        updateStatus(`ربات برای صندوق ${selectedFund} فعال شد و صفحه NAV باز شد.`, 'success');
+        addLog(`صندوق ${selectedFund} فعال شد. صفحه NAV باز شد. (تب ${newTab.id})`, 'success');
+        
+    } catch (error) {
+        updateStatus(`خطا در فعال‌سازی صندوق: ${error.message}`, 'error');
+        addLog(`خطا در فعال‌سازی صندوق: ${error.message}`, 'error');
+    }
 }
 
-function stopBot() {
-    chrome.storage.sync.remove('activeFund', () => {
+async function stopBot() {
+    try {
+        // Remove active fund
+        await new Promise(resolve => chrome.storage.sync.remove('activeFund', resolve));
         fundSelector.value = '';
-        updateStatus('ربات با موفقیت خاموش شد.', 'neutral');
-    });
+        
+        // Close NAV assistant tabs
+        await closeNavAssistantTabs();
+        
+        // Clear pending bot tab
+        await chrome.storage.local.remove('pendingBotTab');
+        
+        updateStatus('ربات با موفقیت خاموش شد و تب‌های مدیریت شده بسته شد.', 'neutral');
+        addLog('ربات خاموش شد و تب‌های مدیریت شده بسته شد.', 'info');
+        
+    } catch (error) {
+        updateStatus(`خطا در خاموش کردن ربات: ${error.message}`, 'error');
+        addLog(`خطا در خاموش کردن ربات: ${error.message}`, 'error');
+    }
 }
 
 async function resetFund() {
     const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
-    if (!activeFund) { updateStatus('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
+    if (!activeFund) { 
+        updateStatus('ابتدا یک صندوق را فعال کنید.', 'error'); 
+        return; 
+    }
+    
     try {
         const stored = await chrome.storage.sync.get('authToken');
         const token = stored.authToken || '';
         const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
             headers: { 'token': token }
         });
+        
         if (!response.ok) throw new Error('Could not get config for reset.');
+        
         const config = await response.json();
-        const startUrl = config.expert_price_page_url;
-        if (!startUrl) { updateStatus('URL صفحه قیمت کارشناسی ثبت نشده.', 'error'); return; }
+        const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
+        
+        if (!expertUrl) { 
+            updateStatus('URL صفحه قیمت کارشناسی ثبت نشده.', 'error'); 
+            return; 
+        }
+        
+        // Clear local storage
         await new Promise(resolve => chrome.storage.local.clear(resolve));
-        chrome.tabs.create({ url: startUrl, active: true });
-        updateStatus(`تنظیمات صندوق ${activeFund} ریست شد.`, 'success');
-    } catch (error) { updateStatus(error.message, 'error'); }
+        
+        // Open expert page in new tab
+        const newTab = await chrome.tabs.create({ url: expertUrl, active: true });
+        
+        // Mark this tab as bot-managed
+        const stored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = stored.botManagedTabs || [];
+        botManagedTabs.push(newTab.id);
+        await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
+        
+        updateStatus(`تنظیمات صندوق ${activeFund} ریست شد و صفحه قیمت کارشناسی باز شد.`, 'success');
+        addLog(`ریست صندوق ${activeFund}. صفحه قیمت کارشناسی باز شد. (تب ${newTab.id})`, 'success');
+        
+    } catch (error) { 
+        updateStatus(error.message, 'error');
+        addLog(`خطا در ریست صندوق: ${error.message}`, 'error');
+    }
 }
 
 function updateStatus(message, type) {
@@ -295,6 +404,7 @@ startBtn.addEventListener('click', setActiveFund);
 stopBtn.addEventListener('click', stopBot);
 resetBtn.addEventListener('click', resetFund);
 clearLogBtn.addEventListener('click', clearLogs);
+closeTabsBtn.addEventListener('click', closeNavAssistantTabs);
 logoutBtn.addEventListener('click', logout);
 
 // دکمه‌های وضعیت تعدیل

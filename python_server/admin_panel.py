@@ -122,8 +122,10 @@ async def create_fund(request: Request, name: str = Form(), api_symbol: str = Fo
         with conn.cursor() as cur:
             cur.execute("INSERT INTO funds (name, api_symbol, type, nav_page_url, expert_price_page_url) VALUES (%s, %s, %s, %s, %s)", (name, api_symbol, type, nav_page_url, expert_price_page_url))
             conn.commit(); message = "Fund created successfully"
-    except psycopg2.Error:
-        message = "Fund name already exists"
+    except psycopg2.Error as e:
+        # Surface actual DB error to help diagnose schema mismatches (e.g., missing columns)
+        err = getattr(e, 'pgerror', None) or str(e)
+        message = f"DB error: {err[:160]}"
     finally:
         conn.close()
     return RedirectResponse(url=f"/admin?message={message}", status_code=302)

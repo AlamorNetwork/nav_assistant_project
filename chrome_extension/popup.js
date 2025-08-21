@@ -64,6 +64,9 @@ async function checkAuth() {
             return true;
         }
     }
+    
+    // No token or user data
+    addLog('No auth data found, showing login screen');
     showLoginScreen();
     return false;
 }

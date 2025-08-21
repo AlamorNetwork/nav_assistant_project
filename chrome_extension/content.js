@@ -169,6 +169,11 @@ async function checkSingleFund(fund) {
     const isOnNavPage = areUrlsMatching(window.location.href, config.nav_page_url);
     const isOnExpertPage = areUrlsMatching(window.location.href, config.expert_price_page_url);
     
+    log(`URL Check - Current: ${window.location.href}`);
+    log(`URL Check - Nav URL: ${config.nav_page_url}`);
+    log(`URL Check - Expert URL: ${config.expert_price_page_url}`);
+    log(`URL Check - isOnNavPage: ${isOnNavPage}, isOnExpertPage: ${isOnExpertPage}`);
+    
     if (!isOnNavPage && !isOnExpertPage) {
         log(`صفحه فعلی برای صندوق ${fund.name} مناسب نیست.`, 'info');
         return; // Skip this fund if we're not on its pages
@@ -217,13 +222,30 @@ async function checkSingleFund(fund) {
         }
         if (!localState[`listExpanded_${fund.name}`]) {
             log(`در حال افزایش ردیف‌ها و جستجو برای ${fund.name}...`);
+            log(`Selector for increase rows: ${config.increase_rows_selector}`);
+            log(`Selector for expert search button: ${config.expert_search_button_selector}`);
+            
             const increaseRowsInput = document.querySelector(config.increase_rows_selector);
-            if(increaseRowsInput) { increaseRowsInput.value = ''; increaseRowsInput.value = 1000; }
+            if(increaseRowsInput) { 
+                increaseRowsInput.value = ''; 
+                increaseRowsInput.value = 1000; 
+                log(`تعداد ردیف‌ها به 1000 تغییر یافت.`);
+            } else {
+                log(`سلکتور افزایش ردیف‌ها یافت نشد: ${config.increase_rows_selector}`, 'error');
+            }
+            
             const expertSearchButton = document.querySelector(config.expert_search_button_selector);
             if(expertSearchButton) {
+                log(`دکمه جستجو یافت شد. کلیک...`);
                 await chrome.storage.local.set({ [`listExpanded_${fund.name}`]: true });
                 expertSearchButton.click();
-            } else { log(`دکمه جستجوی صفحه قیمت کارشناسی برای ${fund.name} یافت نشد.`, 'error'); }
+            } else { 
+                log(`دکمه جستجوی صفحه قیمت کارشناسی برای ${fund.name} یافت نشد.`, 'error');
+                log(`تمام دکمه‌های موجود در صفحه:`);
+                document.querySelectorAll('button').forEach((btn, i) => {
+                    log(`Button ${i}: ${btn.textContent?.trim() || 'no text'} - ${btn.className || 'no class'}`);
+                });
+            }
         } else {
             log(`در حال جمع‌آوری لیست اوراق برای ${fund.name}...`);
             const securityElements = document.querySelectorAll(config.securities_list_selector);

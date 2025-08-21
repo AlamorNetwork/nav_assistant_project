@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://respina.irplatforme.ir';
+const API_BASE_URL = 'https://chabokan.irplatforme.ir';
 
 // DOM elements - will be initialized after DOM loads
 let fundSelector, statusDiv, startBtn, stopBtn, resetBtn, logBox, clearLogBtn;

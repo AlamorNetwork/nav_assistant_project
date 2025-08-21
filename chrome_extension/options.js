@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://respina.irplatforme.ir';
+const API_BASE_URL = 'https://chabokan.irplatforme.ir';
 const statusDiv = document.getElementById('status');
 const fundSelector = document.getElementById('fundSelector');
 const testConnectionBtn = document.getElementById('testConnectionBtn');

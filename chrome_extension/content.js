@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://respina.irplatforme.ir';
+const API_BASE_URL = 'https://chabokan.irplatforme.ir';
 let TEST_MODE = false; // حالت پیش‌فرض؛ می‌تواند بر اساس صندوق غیرفعال/فعال شود
 const MAX_PERSISTED_LOGS = 500;
 let monitoringInterval = null;

@@ -34,12 +34,14 @@ update_project() {
     systemctl status $SERVICE_NAME
 }
 SERVICE_NAME="nav_assistant.service"
+ADMIN_SERVICE_NAME="nav_admin.service"
 PROJECT_DIR="/opt/nav_assistant_project"
 # Main installation function
 install_nav_assistant() {
     # --- Step 1: Get user input ---
     print_info "--- Step 1: Gathering Initial Information ---"
-    read -p "Please enter your domain name (e.g., navapi.yourdomain.com): " DOMAIN
+    read -p "Please enter your API domain (e.g., api.example.com): " DOMAIN
+    read -p "(Optional) Enter your Admin panel domain (leave empty to skip): " ADMIN_DOMAIN
     read -p "Please enter the full Git repository URL for the project: " GIT_REPO_URL
     read -p "Please enter a valid email for the SSL certificate: " EMAIL
     PROJECT_DIR="nav_assistant_project"
@@ -127,12 +129,38 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
 
+    # Admin panel service (optional)
+    if [[ -n "$ADMIN_DOMAIN" ]]; then
+        cat > /etc/systemd/system/nav_admin.service <<EOF
+[Unit]
+Description=NAV Assistant Admin Panel Uvicorn Service
+After=network.target
+
+[Service]
+User=$SERVICE_USER
+Group=www-data
+WorkingDirectory=$WORKING_DIR
+EnvironmentFile=/etc/nav_assistant.env
+ExecStart=$UVICORN_PATH admin_panel:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    fi
+
     systemctl daemon-reload
     systemctl enable nav_assistant.service
     systemctl start nav_assistant.service
+    if [[ -n "$ADMIN_DOMAIN" ]]; then
+        systemctl enable nav_admin.service
+        systemctl start nav_admin.service
+    fi
 
     # --- Step 5: Configure Nginx and get SSL certificate ---
     print_info "\n--- Step 5: Configuring Nginx and getting SSL Certificate ---"
+    # API server block
     cat > /etc/nginx/sites-available/$DOMAIN <<EOF
 server {
     listen 80;
@@ -150,16 +178,44 @@ EOF
     # Remove existing link if it exists, then create a new one
     rm -f /etc/nginx/sites-enabled/$DOMAIN
     ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+
+    # Admin server block (optional)
+    if [[ -n "$ADMIN_DOMAIN" ]]; then
+        cat > /etc/nginx/sites-available/$ADMIN_DOMAIN <<EOF
+server {
+    listen 80;
+    server_name $ADMIN_DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+        rm -f /etc/nginx/sites-enabled/$ADMIN_DOMAIN
+        ln -s /etc/nginx/sites-available/$ADMIN_DOMAIN /etc/nginx/sites-enabled/
+    fi
+
     nginx -t
-    certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
-    systemctl restart nginx
+    systemctl reload nginx || systemctl restart nginx
+
+    # SSL for API
+    certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect || true
+    # SSL for Admin (optional)
+    if [[ -n "$ADMIN_DOMAIN" ]]; then
+        certbot --nginx -d $ADMIN_DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect || true
+    fi
 
     # --- Step 6: Create the management script ---
     print_info "\n--- Step 6: Creating Management Menu ---"
     cat > /usr/local/bin/nav_manager <<'EOF'
 #!/bin/bash
-# Management script for the NAV Assistant service
+# Management script for the NAV Assistant services
 SERVICE_NAME="nav_assistant.service"
+ADMIN_SERVICE_NAME="nav_admin.service"
 PROJECT_DIR_PATH="/opt/nav_assistant_project"
 PY_VENV="$PROJECT_DIR_PATH/python_server/venv"
 
@@ -167,11 +223,11 @@ show_menu() {
     echo "================================="
     echo "    NAV Assistant Management Menu"
     echo "================================="
-    echo "1. Check Service Status"
-    echo "2. View Live Backend Logs (service)"
-    echo "3. Restart Backend Service"
-    echo "4. Stop Backend Service"
-    echo "5. Start Backend Service"
+    echo "1. Check Backend Status"
+    echo "2. View Backend Logs (follow)"
+    echo "3. Restart Backend"
+    echo "4. Stop Backend"
+    echo "5. Start Backend"
     echo "6. Update Project from Git"
     echo "7. Reset Stack (restart backend + reload nginx)"
     echo "8. View Nginx Access Log (follow)"
@@ -180,6 +236,11 @@ show_menu() {
     echo "11. Certbot Renew (force now)"
     echo "12. Show Environment (/etc/nav_assistant.env)"
     echo "13. Edit Environment (nano)"
+    echo "14. Check Admin Status"
+    echo "15. View Admin Logs (follow)"
+    echo "16. Restart Admin"
+    echo "17. Stop Admin"
+    echo "18. Start Admin"
     echo "0. Exit"
     echo "================================="
 }
@@ -189,22 +250,25 @@ while true; do
     case $choice in
         1) systemctl status $SERVICE_NAME ;;
         2) journalctl -u $SERVICE_NAME -f ;;
-        3) systemctl restart $SERVICE_NAME && echo "Service restarted." ;;
-        4) systemctl stop $SERVICE_NAME && echo "Service stopped." ;;
-        5) systemctl start $SERVICE_NAME && echo "Service started." ;;
+        3) systemctl restart $SERVICE_NAME && echo "Backend restarted." ;;
+        4) systemctl stop $SERVICE_NAME && echo "Backend stopped." ;;
+        5) systemctl start $SERVICE_NAME && echo "Backend started." ;;
         6)
             echo "Updating project..."
             if [[ -d "$PROJECT_DIR_PATH/.git" ]]; then
                 cd "$PROJECT_DIR_PATH" || { echo "Project not found."; continue; }
                 git pull --rebase || { echo "git pull failed"; continue; }
                 "$PY_VENV/bin/pip" install -r "$PROJECT_DIR_PATH/python_server/requirements.txt" || echo "pip install failed"
-                systemctl restart $SERVICE_NAME && echo "Service restarted."
+                systemctl restart $SERVICE_NAME && echo "Backend restarted."
+                if systemctl list-unit-files | grep -q "$ADMIN_SERVICE_NAME"; then
+                    systemctl restart $ADMIN_SERVICE_NAME && echo "Admin restarted."
+                fi
             else
                 echo "Git repository not found at $PROJECT_DIR_PATH"
             fi
             ;;
         7)
-            systemctl restart $SERVICE_NAME && echo "Service restarted."
+            systemctl restart $SERVICE_NAME && echo "Backend restarted."
             systemctl reload nginx && echo "Nginx reloaded."
             ;;
         8)
@@ -220,6 +284,16 @@ while true; do
             cat /etc/nav_assistant.env || echo "Env file not found." ;;
         13)
             nano /etc/nav_assistant.env ;;
+        14)
+            systemctl status $ADMIN_SERVICE_NAME || echo "Admin service not installed." ;;
+        15)
+            journalctl -u $ADMIN_SERVICE_NAME -f || echo "Admin service not installed." ;;
+        16)
+            systemctl restart $ADMIN_SERVICE_NAME && echo "Admin restarted." || echo "Admin service not installed." ;;
+        17)
+            systemctl stop $ADMIN_SERVICE_NAME && echo "Admin stopped." || echo "Admin service not installed." ;;
+        18)
+            systemctl start $ADMIN_SERVICE_NAME && echo "Admin started." || echo "Admin service not installed." ;;
         0) break ;;
         *) echo "Invalid option." ;;
     esac
@@ -230,8 +304,11 @@ EOF
 
     print_success "\n✅ Installation and configuration completed successfully!"
     print_success "The project is installed in /opt/$PROJECT_DIR"
-    print_success "Your service is now available at https://$DOMAIN"
-    print_success "To manage the service, run 'sudo nav_manager' at any time."
+    print_success "Your API is now available at https://$DOMAIN"
+    if [[ -n "$ADMIN_DOMAIN" ]]; then
+        print_success "Your Admin panel is now available at https://$ADMIN_DOMAIN"
+    fi
+    print_success "To manage the services, run 'sudo nav_manager' at any time."
 }
 
 # --- Main script logic ---

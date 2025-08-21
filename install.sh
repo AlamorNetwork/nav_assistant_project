@@ -168,11 +168,18 @@ show_menu() {
     echo "    NAV Assistant Management Menu"
     echo "================================="
     echo "1. Check Service Status"
-    echo "2. View Live Logs"
-    echo "3. Restart Service"
-    echo "4. Stop Service"
-    echo "5. Start Service"
+    echo "2. View Live Backend Logs (service)"
+    echo "3. Restart Backend Service"
+    echo "4. Stop Backend Service"
+    echo "5. Start Backend Service"
     echo "6. Update Project from Git"
+    echo "7. Reset Stack (restart backend + reload nginx)"
+    echo "8. View Nginx Access Log (follow)"
+    echo "9. View Nginx Error Log (follow)"
+    echo "10. Certbot Renew (dry-run)"
+    echo "11. Certbot Renew (force now)"
+    echo "12. Show Environment (/etc/nav_assistant.env)"
+    echo "13. Edit Environment (nano)"
     echo "0. Exit"
     echo "================================="
 }
@@ -196,6 +203,23 @@ while true; do
                 echo "Git repository not found at $PROJECT_DIR_PATH"
             fi
             ;;
+        7)
+            systemctl restart $SERVICE_NAME && echo "Service restarted."
+            systemctl reload nginx && echo "Nginx reloaded."
+            ;;
+        8)
+            tail -n 200 -f /var/log/nginx/access.log ;;
+        9)
+            tail -n 200 -f /var/log/nginx/error.log ;;
+        10)
+            certbot renew --dry-run ;;
+        11)
+            certbot renew --force-renewal ;;
+        12)
+            echo "---- /etc/nav_assistant.env ----"
+            cat /etc/nav_assistant.env || echo "Env file not found." ;;
+        13)
+            nano /etc/nav_assistant.env ;;
         0) break ;;
         *) echo "Invalid option." ;;
     esac

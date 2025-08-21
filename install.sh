@@ -44,11 +44,35 @@ install_nav_assistant() {
     read -p "Please enter a valid email for the SSL certificate: " EMAIL
     PROJECT_DIR="nav_assistant_project"
     SERVICE_USER="nav_assistant_user"
+    read -p "Use local PostgreSQL on this server? [y/N]: " USE_LOCAL_PG
+    if [[ -z "$USE_LOCAL_PG" ]]; then USE_LOCAL_PG="N"; fi
+    if [[ "$USE_LOCAL_PG" =~ ^[Yy]$ ]]; then
+        read -p "Postgres DB name [nav_assistant]: " PG_DB
+        read -p "Postgres DB user [nav_user]: " PG_USER
+        read -s -p "Postgres DB password: " PG_PASS; echo
+        PG_DB=${PG_DB:-nav_assistant}
+        PG_USER=${PG_USER:-nav_user}
+    else
+        read -p "Enter external DB_URL (e.g. postgresql://user:pass@host:5432/dbname): " EXTERNAL_DB_URL
+    fi
+    read -p "Enter Telegram BOT_TOKEN (or leave empty to skip alerts): " BOT_TOKEN
+    read -p "Enter Telegram ADMIN_CHAT_ID (or leave empty to skip alerts): " ADMIN_CHAT_ID
     
     # --- Step 2: Install system prerequisites ---
     print_info "\n--- Step 2: Installing System Prerequisites ---"
     apt-get update
     apt-get install -y git python3-pip python3-venv nginx certbot python3-certbot-nginx
+    if [[ "$USE_LOCAL_PG" =~ ^[Yy]$ ]]; then
+        print_info "Installing PostgreSQL..."
+        apt-get install -y postgresql postgresql-contrib
+        systemctl enable postgresql && systemctl start postgresql
+        sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname = '$PG_USER'" | grep -q 1 || sudo -u postgres psql -c "CREATE USER $PG_USER WITH PASSWORD '$PG_PASS';"
+        sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname = '$PG_DB'" | grep -q 1 || sudo -u postgres psql -c "CREATE DATABASE $PG_DB OWNER $PG_USER;"
+        sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $PG_DB TO $PG_USER;"
+        DB_URL="postgresql://$PG_USER:$PG_PASS@127.0.0.1:5432/$PG_DB"
+    else
+        DB_URL="$EXTERNAL_DB_URL"
+    fi
 
     # --- Step 3: Set up the Python application in /opt ---
     print_info "\n--- Step 3: Setting up the Python Application in /opt ---"
@@ -62,7 +86,18 @@ install_nav_assistant() {
     python3 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
-    ./venv/bin/python database_setup.py
+    # Create env file for systemd
+    print_info "Writing environment file to /etc/nav_assistant.env"
+    cat > /etc/nav_assistant.env <<ENVEOF
+DB_URL=$DB_URL
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_CHAT_ID=$ADMIN_CHAT_ID
+ENVEOF
+    chmod 640 /etc/nav_assistant.env
+    chown root:www-data /etc/nav_assistant.env
+
+    # Initialize database schema
+    DB_URL="$DB_URL" ./venv/bin/python database_setup.py
     deactivate
     
     # Change ownership of the entire project directory to the service user
@@ -83,6 +118,7 @@ After=network.target
 User=$SERVICE_USER
 Group=www-data
 WorkingDirectory=$WORKING_DIR
+EnvironmentFile=/etc/nav_assistant.env
 ExecStart=$UVICORN_PATH main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=3
@@ -104,10 +140,10 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 EOF
@@ -120,10 +156,12 @@ EOF
 
     # --- Step 6: Create the management script ---
     print_info "\n--- Step 6: Creating Management Menu ---"
-    cat > /usr/local/bin/nav_manager <<EOF
+    cat > /usr/local/bin/nav_manager <<'EOF'
 #!/bin/bash
 # Management script for the NAV Assistant service
 SERVICE_NAME="nav_assistant.service"
+PROJECT_DIR_PATH="/opt/nav_assistant_project"
+PY_VENV="$PROJECT_DIR_PATH/python_server/venv"
 
 show_menu() {
     echo "================================="
@@ -147,7 +185,17 @@ while true; do
         3) systemctl restart $SERVICE_NAME && echo "Service restarted." ;;
         4) systemctl stop $SERVICE_NAME && echo "Service stopped." ;;
         5) systemctl start $SERVICE_NAME && echo "Service started." ;;
-        6) update_project ;;
+        6)
+            echo "Updating project..."
+            if [[ -d "$PROJECT_DIR_PATH/.git" ]]; then
+                cd "$PROJECT_DIR_PATH" || { echo "Project not found."; continue; }
+                git pull --rebase || { echo "git pull failed"; continue; }
+                "$PY_VENV/bin/pip" install -r "$PROJECT_DIR_PATH/python_server/requirements.txt" || echo "pip install failed"
+                systemctl restart $SERVICE_NAME && echo "Service restarted."
+            else
+                echo "Git repository not found at $PROJECT_DIR_PATH"
+            fi
+            ;;
         0) break ;;
         *) echo "Invalid option." ;;
     esac

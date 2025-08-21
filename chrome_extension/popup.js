@@ -16,6 +16,10 @@ function renderLogEntry(entry) {
 }
 
 async function addLog(message, type = 'info') {
+    if (!logBox) {
+        console.log(`[${type.toUpperCase()}] ${message}`);
+        return;
+    }
     renderLogEntry({ message, type, timestamp: Date.now() });
     logBox.scrollTop = logBox.scrollHeight;
 }
@@ -30,16 +34,40 @@ async function clearLogs() {
 
 // --- Authentication ---
 async function checkAuth() {
+    // Wait for DOM elements to be ready
+    if (!logBox) {
+        addLog('DOM not ready yet, retrying in 100ms...', 'warn');
+        setTimeout(checkAuth, 100);
+        return false;
+    }
+    
     const stored = await new Promise(resolve => chrome.storage.sync.get(['authToken', 'authUser'], resolve));
     addLog(`Checking auth: token=${!!stored.authToken}, user=${stored.authUser?.username || 'none'}`);
     
     if (stored.authToken && stored.authUser) {
+        // Only verify token if we haven't checked recently (to avoid too many requests)
+        const lastCheck = await new Promise(resolve => chrome.storage.local.get('lastAuthCheck', resolve));
+        const now = Date.now();
+        const timeSinceLastCheck = now - (lastCheck.lastAuthCheck || 0);
+        
+        // Only check token validity every 5 minutes
+        if (timeSinceLastCheck < 5 * 60 * 1000) {
+            addLog(`Token check skipped (checked ${Math.round(timeSinceLastCheck/1000)}s ago)`);
+            showMainInterface();
+            await fetchFunds(); // Load funds data
+            return true;
+        }
+        
         // Verify token is still valid
         try {
             const response = await fetch(`${API_BASE_URL}/funds`, {
                 headers: { 'token': stored.authToken }
             });
             addLog(`Token validation response: ${response.status}`);
+            
+            // Update last check time
+            await chrome.storage.local.set({ lastAuthCheck: now });
+            
             if (response.status === 401 || response.status === 403) {
                 addLog('Token invalid or expired. Clearing auth and showing login.', 'warn');
                 await chrome.storage.sync.remove(['authToken', 'authUser']);
@@ -47,20 +75,18 @@ async function checkAuth() {
                 return false;
             }
 
-            if (response.ok) {
-                showMainInterface();
-                addLog(`Authenticated as ${stored.authUser.username}`);
-                return true;
-            }
-
-            // Non-OK but not unauthorized: keep the session, show main UI
-            addLog('Token validation returned non-OK status, keeping session.', 'warn');
+            // Any other response (including network errors) - keep the session
             showMainInterface();
+            addLog(`Authenticated as ${stored.authUser.username}`);
+            await fetchFunds(); // Load funds data
             return true;
+            
         } catch (e) {
-            // Network or transient error: do NOT clear auth; keep user logged in
+            // Network or transient error: keep user logged in
             addLog(`Token validation error (keeping session): ${e.message}`, 'warn');
+            await chrome.storage.local.set({ lastAuthCheck: now });
             showMainInterface();
+            await fetchFunds(); // Load funds data
             return true;
         }
     }
@@ -72,13 +98,21 @@ async function checkAuth() {
 }
 
 function showLoginScreen() {
-    if (loginScreen) loginScreen.style.display = 'block';
-    if (mainInterface) mainInterface.style.display = 'none';
+    if (loginScreen) {
+        loginScreen.style.display = 'block';
+    }
+    if (mainInterface) {
+        mainInterface.style.display = 'none';
+    }
 }
 
 function showMainInterface() {
-    if (loginScreen) loginScreen.style.display = 'none';
-    if (mainInterface) mainInterface.style.display = 'block';
+    if (loginScreen) {
+        loginScreen.style.display = 'none';
+    }
+    if (mainInterface) {
+        mainInterface.style.display = 'block';
+    }
 }
 
 async function login() {
@@ -100,6 +134,7 @@ async function login() {
         
         const raw = await response.text();
         addLog(`Login response status: ${response.status}`);
+        addLog(`Login response body: ${raw}`, 'info');
         
         if (!response.ok) {
             addLog(`Login failed: ${raw}`, 'error');
@@ -109,6 +144,7 @@ async function login() {
         let result;
         try {
             result = JSON.parse(raw);
+            addLog(`Parsed JSON: ${JSON.stringify(result)}`, 'info');
         } catch (e) {
             addLog(`Invalid JSON response: ${raw}`, 'error');
             throw new Error('پاسخ نامعتبر از سرور');
@@ -149,6 +185,7 @@ async function login() {
 
 async function logout() {
     await chrome.storage.sync.remove(['authToken', 'authUser']);
+    await chrome.storage.local.remove('lastAuthCheck');
     showLoginScreen();
     addLog('خروج انجام شد.');
 }
@@ -276,27 +313,61 @@ async function setActiveFund() {
         
         const config = await response.json();
         const navUrl = config.fund_nav_page_url || config.nav_page_url;
+        const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
         
         if (!navUrl) {
             updateStatus('URL صفحه NAV برای این صندوق تنظیم نشده.', 'error');
             return;
         }
         
-        // Clear storage and set active fund
-        await new Promise(resolve => chrome.storage.local.clear(resolve));
+        // Set active fund (do NOT clear local storage to preserve selected security)
         await new Promise(resolve => chrome.storage.sync.set({ activeFund: selectedFund }, resolve));
         
-        // Open the NAV page in a new tab
-        const newTab = await chrome.tabs.create({ url: navUrl, active: true });
+        // Close existing bot-managed tabs first
+        await closeNavAssistantTabs();
         
-        // Mark this tab as bot-managed
-        const botStored = await chrome.storage.local.get('botManagedTabs');
-        const botManagedTabs = botStored.botManagedTabs || [];
-        botManagedTabs.push(newTab.id);
-        await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
+        // Open the NAV page
+        const navTabResponse = await chrome.runtime.sendMessage({ 
+            type: 'CREATE_TAB', 
+            url: navUrl 
+        });
         
-        updateStatus(`ربات برای صندوق ${selectedFund} فعال شد و صفحه NAV باز شد.`, 'success');
-        addLog(`صندوق ${selectedFund} فعال شد. صفحه NAV باز شد. (تب ${newTab.id})`, 'success');
+        // Open the Expert page (inactive)
+        let expertTabResponse = null;
+        if (expertUrl) {
+            expertTabResponse = await chrome.runtime.sendMessage({ 
+                type: 'CREATE_TAB', 
+                url: expertUrl,
+                active: false
+            });
+        }
+
+        if (navTabResponse && navTabResponse.ok && navTabResponse.tabId) {
+            // Mark this tab as bot-managed
+            const botStored = await chrome.storage.local.get('botManagedTabs');
+            const botManagedTabs = botStored.botManagedTabs || [];
+            botManagedTabs.push(navTabResponse.tabId);
+            if (expertTabResponse && expertTabResponse.ok && expertTabResponse.tabId) {
+                botManagedTabs.push(expertTabResponse.tabId);
+            }
+            
+            // Ensure we don't exceed 2 tabs
+            if (botManagedTabs.length > 2) {
+                botManagedTabs.splice(0, botManagedTabs.length - 2);
+            }
+            
+            const toStore = { botManagedTabs: botManagedTabs };
+            toStore[`navTabId_${selectedFund}`] = navTabResponse.tabId;
+            if (expertTabResponse && expertTabResponse.ok && expertTabResponse.tabId) {
+                toStore[`expertTabId_${selectedFund}`] = expertTabResponse.tabId;
+            }
+            await chrome.storage.local.set(toStore);
+            
+            updateStatus(`ربات برای صندوق ${selectedFund} فعال شد و صفحه NAV باز شد.`, 'success');
+            addLog(`NAV tab: ${navTabResponse.tabId}${expertTabResponse && expertTabResponse.tabId ? `, Expert tab: ${expertTabResponse.tabId}` : ''}`, 'success');
+        } else {
+            throw new Error('خطا در باز کردن تب جدید');
+        }
         
     } catch (error) {
         updateStatus(`خطا در فعال‌سازی صندوق: ${error.message}`, 'error');
@@ -349,20 +420,35 @@ async function resetFund() {
             return; 
         }
         
-        // Clear local storage
-        await new Promise(resolve => chrome.storage.local.clear(resolve));
+        // Do NOT clear local storage to preserve selected security and state
         
-        // Open expert page in new tab
-        const newTab = await chrome.tabs.create({ url: expertUrl, active: true });
+        // Close existing bot-managed tabs first
+        await closeNavAssistantTabs();
         
-        // Mark this tab as bot-managed
-        const botStored = await chrome.storage.local.get('botManagedTabs');
-        const botManagedTabs = botStored.botManagedTabs || [];
-        botManagedTabs.push(newTab.id);
-        await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
+        // Open expert page in new tab using background script
+        const tabResponse = await chrome.runtime.sendMessage({ 
+            type: 'CREATE_TAB', 
+            url: expertUrl 
+        });
         
-        updateStatus(`تنظیمات صندوق ${activeFund} ریست شد و صفحه قیمت کارشناسی باز شد.`, 'success');
-        addLog(`ریست صندوق ${activeFund}. صفحه قیمت کارشناسی باز شد. (تب ${newTab.id})`, 'success');
+        if (tabResponse && tabResponse.ok && tabResponse.tabId) {
+            // Mark this tab as bot-managed
+            const botStored = await chrome.storage.local.get('botManagedTabs');
+            const botManagedTabs = botStored.botManagedTabs || [];
+            botManagedTabs.push(tabResponse.tabId);
+            
+            // Ensure we don't exceed 2 tabs
+            if (botManagedTabs.length > 2) {
+                botManagedTabs.splice(0, botManagedTabs.length - 2);
+            }
+            
+            await chrome.storage.local.set({ botManagedTabs: botManagedTabs });
+            
+            updateStatus(`تنظیمات صندوق ${activeFund} ریست شد و صفحه قیمت کارشناسی باز شد.`, 'success');
+            addLog(`ریست صندوق ${activeFund}. صفحه قیمت کارشناسی باز شد. (تب ${tabResponse.tabId})`, 'success');
+        } else {
+            throw new Error('خطا در باز کردن تب جدید');
+        }
         
     } catch (error) { 
         updateStatus(error.message, 'error');
@@ -432,9 +518,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Set up event listeners
     setupEventListeners();
     
-    // Load logs and check auth
+    // Load logs first
     await loadPersistedLogs();
-    await checkAuth();
+    
+    // Then check auth (which will also load funds if authenticated)
+    setTimeout(async () => {
+        await checkAuth();
+    }, 100); // Small delay to ensure DOM is fully ready
 });
 
 function setupEventListeners() {

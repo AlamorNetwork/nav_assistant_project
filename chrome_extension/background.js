@@ -11,7 +11,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		});
 		return true; // async
 	} else if (request?.type === 'CREATE_TAB') {
-		chrome.tabs.create({ url: request.url, active: true }, (tab) => {
+		chrome.tabs.create({ url: request.url, active: request.active !== false }, (tab) => {
 			if (chrome.runtime.lastError) {
 				return sendResponse({ ok: false, error: chrome.runtime.lastError.message });
 			}
@@ -28,5 +28,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			sendResponse({ ok: true, closed: tabIds.length });
 		});
 		return true; // async
+	} else if (request?.type === 'ACTIVATE_TAB') {
+		const tabId = request.tabId;
+		if (!tabId) return sendResponse({ ok: false, error: 'tabId required' });
+		chrome.tabs.update(tabId, { active: true }, () => {
+			if (chrome.runtime.lastError) {
+				return sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+			}
+			sendResponse({ ok: true });
+		});
+		return true;
+	} else if (request?.type === 'SEND_MESSAGE_TO_TAB') {
+		const { tabId, message } = request;
+		if (!tabId) return sendResponse({ ok: false, error: 'tabId required' });
+		chrome.tabs.sendMessage(tabId, message, (resp) => {
+			if (chrome.runtime.lastError) {
+				return sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+			}
+			sendResponse({ ok: true, response: resp });
+		});
+		return true;
 	}
 });

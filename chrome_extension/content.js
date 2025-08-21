@@ -8,6 +8,103 @@ let activeFunds = []; // Array of active funds for this user
 // --- Helper Functions ---
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Wait until the number of matched elements stabilizes (no change for a few cycles)
+async function waitForListStabilize(selector, { stableCycles = 3, intervalMs = 400, maxTries = 40 } = {}) {
+	try {
+		let lastCount = -1;
+		let stable = 0;
+		let tries = 0;
+		while (tries < maxTries && stable < stableCycles) {
+			await sleep(intervalMs);
+			const count = document.querySelectorAll(selector).length;
+			if (count === lastCount) {
+				stable++;
+			} else {
+				stable = 0;
+				lastCount = count;
+			}
+			tries++;
+		}
+		log(`پایداری لیست بررسی شد (${selector}). تعداد نهایی ردیف‌ها: ${document.querySelectorAll(selector).length}`);
+	} catch (e) {
+		log(`خطا در انتظار پایداری لیست: ${e.message}`, 'warn');
+	}
+}
+
+// Function to process expert data and send to server
+async function processExpertData(fund, config, sellableQuantity, expertPrice, localState) {
+    try {
+        // 4) ارسال به سرور
+        const finalResponse = await fetch(`${API_BASE_URL}/check-nav`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fund_name: fund.name, nav_on_page: localState[`navCheckData_${fund.name}`].nav_on_page,
+                total_units: localState[`navCheckData_${fund.name}`].total_units,
+                sellable_quantity: sellableQuantity, expert_price: expertPrice
+            })
+        });
+        const finalResult = await finalResponse.json();
+        log(`پاسخ نهایی سرور برای ${fund.name}: ${finalResult.suggested_nav}`, 'success');
+        
+        // 5) پس از موفقیت، فلگ را خاموش کن تا در رفرش‌های بعدی دوباره اجرا نشود
+        await chrome.storage.local.set({ [`needsExpertData_${fund.name}`]: false });
+        
+        showNotification({
+            title: `🚨 نیاز به تعدیل NAV - ${fund.name}`,
+            message: `قیمت پیشنهادی جدید: ${finalResult.suggested_nav}`,
+            type: 'error',
+            persistent: true,
+            buttons: [
+                {
+                    id: 'recheck-btn',
+                    text: 'تعدیل زدم، دوباره چک کن',
+                    callback: async () => {
+                        log(`کاربر تایید کرد برای ${fund.name}. در حال بازگشت به صفحه NAV برای بررسی مجدد...`);
+                        const navUrl = config.fund_nav_page_url || config.nav_page_url;
+                        if (navUrl) {
+                            // Manage tab limit before navigation
+                            await manageTabLimit();
+                            
+                            // Navigate in the same tab instead of opening new one
+                            window.location.href = navUrl;
+                        }
+                    }
+                }
+            ]
+        });
+    } catch (e) {
+        log(`خطا در پردازش داده‌های کارشناسی: ${e.message}`, 'error');
+    }
+}
+
+// Function to manage only 2 tabs (NAV and Expert)
+async function manageTabLimit() {
+    try {
+        const stored = await chrome.storage.local.get('botManagedTabs');
+        const botManagedTabs = stored.botManagedTabs || [];
+        
+        // If we have more than 2 tabs, close the oldest ones
+        if (botManagedTabs.length > 2) {
+            const tabsToClose = botManagedTabs.slice(0, botManagedTabs.length - 2);
+            const remainingTabs = botManagedTabs.slice(-2);
+            
+            // Close excess tabs
+            if (tabsToClose.length > 0) {
+                await chrome.runtime.sendMessage({ 
+                    type: 'CLOSE_TABS', 
+                    tabIds: tabsToClose 
+                });
+                log(`${tabsToClose.length} تب اضافی بسته شد. فقط 2 تب باقی ماند.`);
+            }
+            
+            // Update stored tabs
+            await chrome.storage.local.set({ botManagedTabs: remainingTabs });
+        }
+    } catch (e) {
+        log(`خطا در مدیریت تعداد تب‌ها: ${e.message}`, 'warn');
+    }
+}
+
 async function log(message, type = 'info') {
     const entry = { message, type, timestamp: Date.now(), url: window.location.href };
     console.log(`[${type.toUpperCase()}] ${message}`);
@@ -185,39 +282,44 @@ async function checkSingleFund(fund) {
         `listExpanded_${fund.name}`, 
         `needsExpertData_${fund.name}`, 
         `navCheckData_${fund.name}`, 
-        `navSearchClicked_${fund.name}`
+        `navSearchClicked_${fund.name}`,
+        `navTabId_${fund.name}`,
+        `expertTabId_${fund.name}`
     ]);
     
     const selectedSecurityIndex = localState[`selectedSecurityIndex_${fund.name}`];
     
     // --- Initial Setup Logic ---
-    if (selectedSecurityIndex === undefined) {
+    // Skip prompting when we're on Expert page for adjustment flow (needsExpertData)
+    if (selectedSecurityIndex === undefined && !(isOnExpertPage && localState[`needsExpertData_${fund.name}`])) {
         log(`وضعیت: راه‌اندازی اولیه برای صندوق ${fund.name}.`);
         if (!isOnExpertPage) {
             log(`در صفحه اشتباه. باز کردن تب جدید قیمت کارشناسی برای ${fund.name}...`);
             const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
             try { 
                 if (expertUrl) {
-                    // Open new tab and mark it as bot-managed
-                    const newTab = window.open(expertUrl, '_blank');
-                    if (newTab) {
-                        // We'll mark this tab as bot-managed when it loads
-                        setTimeout(async () => {
-                            try {
-                                const stored = await chrome.storage.local.get('botManagedTabs');
-                                const botManagedTabs = stored.botManagedTabs || [];
-                                // We can't get the tab ID from window.open, so we'll mark it by URL
-                                await chrome.storage.local.set({ 
-                                    botManagedTabs: botManagedTabs,
-                                    pendingBotTab: expertUrl 
-                                });
-                            } catch (e) {
-                                log(`خطا در ثبت تب جدید: ${e.message}`, 'error');
-                            }
-                        }, 1000);
+                    // Use background script to create tab and get its ID (inactive)
+                    const response = await chrome.runtime.sendMessage({ 
+                        type: 'CREATE_TAB', 
+                        url: expertUrl,
+                        active: false
+                    });
+                    if (response && response.ok && response.tabId) {
+                        const stored = await chrome.storage.local.get(['botManagedTabs']);
+                        const botManagedTabs = stored.botManagedTabs || [];
+                        botManagedTabs.push(response.tabId);
+                        await chrome.storage.local.set({ 
+                            botManagedTabs,
+                            [`expertTabId_${fund.name}`]: response.tabId
+                        });
+                        log(`تب Expert با ID ${response.tabId} ثبت شد.`);
+                    } else {
+                        log(`خطا در باز کردن تب جدید: ${response?.error || 'unknown error'}`, 'error');
                     }
                 }
-            } catch {}
+            } catch (e) {
+                log(`خطا در باز کردن تب جدید: ${e.message}`, 'error');
+            }
             return;
         }
         if (!localState[`listExpanded_${fund.name}`]) {
@@ -247,26 +349,37 @@ async function checkSingleFund(fund) {
                 });
             }
         } else {
-            log(`در حال جمع‌آوری لیست اوراق برای ${fund.name}...`);
-            const securityElements = document.querySelectorAll(config.securities_list_selector);
-            if (securityElements.length === 0) { log(`لیست اوراق برای ${fund.name} خالی است. سلکتور را چک کنید.`, 'error'); return; }
-            log(`تعداد ${securityElements.length} اوراق برای ${fund.name} یافت شد.`, 'success');
-            const securities = Array.from(securityElements).map(el => el.innerText.trim());
-            askForSecurity(securities, async (chosenIndex) => {
-                await chrome.storage.local.set({ 
-                    [`selectedSecurityIndex_${fund.name}`]: parseInt(chosenIndex), 
-                    [`listExpanded_${fund.name}`]: false 
+            // If we are in expert adjustment flow, do NOT prompt again here
+            if (isOnExpertPage && localState[`needsExpertData_${fund.name}`]) {
+                log(`در جریان تعدیل هستیم؛ از انتخاب قبلی استفاده می‌شود.`, 'info');
+            } else {
+                log(`در حال جمع‌آوری لیست اوراق برای ${fund.name}...`);
+                const securityElements = document.querySelectorAll(config.securities_list_selector);
+                if (securityElements.length === 0) { log(`لیست اوراق برای ${fund.name} خالی است. سلکتور را چک کنید.`, 'error'); return; }
+                log(`تعداد ${securityElements.length} اوراق برای ${fund.name} یافت شد.`, 'success');
+                const securities = Array.from(securityElements).map(el => el.innerText.trim());
+                askForSecurity(securities, async (chosenIndex) => {
+                    const selectedSecurityName = securities[parseInt(chosenIndex)];
+                    await chrome.storage.local.set({ 
+                        [`selectedSecurityIndex_${fund.name}`]: parseInt(chosenIndex), 
+                        [`selectedSecurityName_${fund.name}`]: selectedSecurityName,
+                        [`listExpanded_${fund.name}`]: false 
+                    });
+                    log(`اوراق "${selectedSecurityName}" در ردیف ${chosenIndex} برای ${fund.name} انتخاب شد. در حال انتقال به صفحه NAV...`);
+                    const navUrl = config.fund_nav_page_url || config.nav_page_url;
+                    if (navUrl) window.location.href = navUrl;
                 });
-                log(`اوراق در ردیف ${chosenIndex} برای ${fund.name} انتخاب شد. در حال انتقال به صفحه NAV...`);
-                const navUrl = config.fund_nav_page_url || config.nav_page_url;
-                if (navUrl) window.location.href = navUrl;
-            });
+            }
         }
         return;
     }
     
     // --- Main Monitoring Loop ---
     if (isOnNavPage) {
+        // Persist this tab as NAV tab
+        try {
+            await chrome.storage.local.set({ [`navTabId_${fund.name}`]: tabId });
+        } catch {}
         if (!localState[`navSearchClicked_${fund.name}`]) {
             log(`در صفحه NAV برای ${fund.name}. وضعیت: کلیک روی دکمه جستجو.`);
             const searchButton = document.querySelector(config.nav_search_button_selector);
@@ -309,30 +422,47 @@ async function checkSingleFund(fund) {
                     [`navCheckData_${fund.name}`]: { nav_on_page: navOnPage, total_units: totalUnits }, 
                     [`needsExpertData_${fund.name}`]: true 
                 });
-                log(`نیاز به تعدیل برای ${fund.name}. در حال انتقال...`);
+                log(`نیاز به تعدیل برای ${fund.name}. ارسال فرمان به تب قیمت کارشناسی...`);
                 const expertUrl = config.fund_expert_page_url || config.expert_price_page_url;
                 try { 
                     if (expertUrl) {
-                        // Open new tab and mark it as bot-managed
-                        const newTab = window.open(expertUrl, '_blank');
-                        if (newTab) {
-                            // We'll mark this tab as bot-managed when it loads
-                            setTimeout(async () => {
-                                try {
-                                    const stored = await chrome.storage.local.get('botManagedTabs');
-                                    const botManagedTabs = stored.botManagedTabs || [];
-                                    // We can't get the tab ID from window.open, so we'll mark it by URL
-                                    await chrome.storage.local.set({ 
-                                        botManagedTabs: botManagedTabs,
-                                        pendingBotTab: expertUrl 
-                                    });
-                                } catch (e) {
-                                    log(`خطا در ثبت تب جدید: ${e.message}`, 'error');
-                                }
-                            }, 1000);
+                        // Ensure expert tab exists
+                        const ids = await chrome.storage.local.get([`expertTabId_${fund.name}`]);
+                        let expertTabId = ids[`expertTabId_${fund.name}`];
+                        if (!expertTabId) {
+                            const createResp = await chrome.runtime.sendMessage({ type: 'CREATE_TAB', url: expertUrl, active: false });
+                            if (createResp && createResp.ok && createResp.tabId) {
+                                expertTabId = createResp.tabId;
+                                const stored = await chrome.storage.local.get('botManagedTabs');
+                                const botManagedTabs = stored.botManagedTabs || [];
+                                botManagedTabs.push(expertTabId);
+                                await chrome.storage.local.set({ [`expertTabId_${fund.name}`]: expertTabId, botManagedTabs });
+                            } else {
+                                throw new Error(createResp?.error || 'failed to open expert tab');
+                            }
+                        }
+                        // Send message to expert tab to refresh and read
+                        const msg = {
+                            type: 'RUN_EXPERT_REFRESH_AND_READ',
+                            fund_name: fund.name,
+                            config: {
+                                increase_rows_selector: config.increase_rows_selector,
+                                expert_search_button_selector: config.expert_search_button_selector,
+                                securities_list_selector: config.securities_list_selector,
+                                sellable_quantity_selector: config.sellable_quantity_selector,
+                                expert_price_selector: config.expert_price_selector
+                            }
+                        };
+                        const sendResp = await chrome.runtime.sendMessage({ type: 'SEND_MESSAGE_TO_TAB', tabId: expertTabId, message: msg });
+                        if (!sendResp || !sendResp.ok) {
+                            log(`ارسال فرمان به تب Expert ناموفق بود: ${sendResp?.error || 'unknown'}`, 'warn');
+                        } else {
+                            log('فرمان Expert ارسال شد.', 'info');
                         }
                     }
-                } catch {}
+                } catch (e) {
+                    log(`خطا در فرمان‌دادن به تب قیمت کارشناسی: ${e.message}`, 'error');
+                }
             }
             
             // --- Staleness check: تاریخ/زمان NAV لحظه‌ای ---
@@ -402,6 +532,10 @@ async function checkSingleFund(fund) {
     } 
     // --- Data Gathering Logic ---
     else if (isOnExpertPage) {
+        // Persist this tab as Expert tab
+        try {
+            await chrome.storage.local.set({ [`expertTabId_${fund.name}`]: tabId });
+        } catch {}
         if (localState[`needsExpertData_${fund.name}`]) {
             log(`در صفحه قیمت کارشناسی برای جمع‌آوری داده نهایی ${fund.name}.`);
             await chrome.storage.local.set({ [`needsExpertData_${fund.name}`]: false });
@@ -428,37 +562,99 @@ async function checkSingleFund(fund) {
                     const evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
                     expertSearchButton.dispatchEvent(evt);
                 } catch {}
+                // Mark search clicked so we don't prompt immediately
+                await chrome.storage.local.set({ [`expertSearchClicked_${fund.name}`]: true });
             } else {
                 log("دکمه جستجوی قیمت کارشناسی پیدا نشد.", 'warn');
             }
             
-            // 2) صبر و تلاش برای بارگذاری لیست
+            // 2) صبر و تلاش برای بارگذاری و پایداری لیست پس از تنظیم ردیف‌ها و کلیک جستجو
             let attempts = 0;
             let allSecurityElements = document.querySelectorAll(config.securities_list_selector);
-            while (attempts < 40 && allSecurityElements.length === 0) {
-                await sleep(500);
+            while (attempts < 20 && allSecurityElements.length === 0) {
+                await sleep(300);
                 allSecurityElements = document.querySelectorAll(config.securities_list_selector);
                 attempts++;
             }
+
+            // پس از نمایان شدن اولیه، منتظر پایداری تعداد ردیف‌ها بمان
+            await waitForListStabilize(config.securities_list_selector, { stableCycles: 3, intervalMs: 400, maxTries: 40 });
+            allSecurityElements = document.querySelectorAll(config.securities_list_selector);
             log(`تعداد اوراق یافت‌شده: ${allSecurityElements.length}. ایندکس انتخابی: ${selectedSecurityIndex}`);
             if (allSecurityElements.length === 0) {
-                log("لیست اوراق پس از تلاش اول خالی ماند. تلاش مجدد برای کلیک/سابمیت...", 'warn');
+                log("لیست اوراق خالی است؛ کلیک مجدد روی جستجو و انتظار برای پایداری...", 'warn');
                 if (expertSearchButton) {
                     try { expertSearchButton.click(); } catch {}
                     try { const form = expertSearchButton.closest('form'); if (form && form.requestSubmit) { form.requestSubmit(); } } catch {}
                 }
-                let retry = 0;
-                while (retry < 20 && allSecurityElements.length === 0) {
-                    await sleep(500);
-                    allSecurityElements = document.querySelectorAll(config.securities_list_selector);
-                    retry++;
-                }
+
+                await waitForListStabilize(config.securities_list_selector, { stableCycles: 4, intervalMs: 500, maxTries: 50 });
+                allSecurityElements = document.querySelectorAll(config.securities_list_selector);
                 if (allSecurityElements.length === 0) { log("لیست اوراق پس از تلاش مجدد هم خالی است.", 'error'); return; }
             }
             
             // 3) خواندن از ردیف انتخابی
-            const selectedElement = allSecurityElements[selectedSecurityIndex];
-            if (!selectedElement) { log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود.`, 'error'); return; }
+            // Convert possible 1-based saved index to 0-based
+            const normalizedIndex = Math.max(0, parseInt(selectedSecurityIndex || 0) - 1);
+            const selectedElement = allSecurityElements[normalizedIndex] || allSecurityElements[selectedSecurityIndex];
+            if (!selectedElement) { 
+                log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود. تعداد کل: ${allSecurityElements.length}`, 'error'); 
+                
+                // Try to find the security by name instead of index
+                const securityName = await chrome.storage.local.get(`selectedSecurityName_${fund.name}`);
+                if (securityName[`selectedSecurityName_${fund.name}`]) {
+                    log(`تلاش برای یافتن اوراق با نام: ${securityName[`selectedSecurityName_${fund.name}`]}`, 'info');
+                    let foundIndex = -1;
+                    for (let i = 0; i < allSecurityElements.length; i++) {
+                        const elementText = allSecurityElements[i].innerText.trim();
+                        if (elementText.includes(securityName[`selectedSecurityName_${fund.name}`])) {
+                            foundIndex = i;
+                            break;
+                        }
+                    }
+                    if (foundIndex >= 0) {
+                        log(`اوراق در ردیف ${foundIndex} یافت شد.`, 'success');
+                        const selectedElement = allSecurityElements[foundIndex];
+                        const selectedRow = selectedElement.closest('tr');
+                        if (!selectedRow) { log("پیدا کردن ردیف والد ناموفق بود.", 'error'); return; }
+                        const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
+                        const expertPrice = readElementValue(config.expert_price_selector, selectedRow);
+                        log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
+                        if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
+                        
+                        // Continue with the found data
+                        await processExpertData(fund, config, sellableQuantity, expertPrice, localState);
+                        return;
+                    }
+                }
+                
+                // If we still can't find the security, ask user to select again
+                log("اوراق انتخابی یافت نشد. درخواست انتخاب مجدد...", 'warn');
+                await chrome.storage.local.remove([`selectedSecurityIndex_${fund.name}`, `selectedSecurityName_${fund.name}`]);
+                
+                // Re-expand the list and ask for selection
+                const securityElements = document.querySelectorAll(config.securities_list_selector);
+                if (securityElements.length > 0) {
+                    const securities = Array.from(securityElements).map(el => el.innerText.trim());
+                    askForSecurity(securities, async (chosenIndex) => {
+                        const selectedSecurityName = securities[parseInt(chosenIndex)];
+                        await chrome.storage.local.set({ 
+                            [`selectedSecurityIndex_${fund.name}`]: parseInt(chosenIndex), 
+                            [`selectedSecurityName_${fund.name}`]: selectedSecurityName
+                        });
+                        log(`اوراق "${selectedSecurityName}" در ردیف ${chosenIndex} برای ${fund.name} انتخاب شد. در حال ادامه...`);
+                        // Continue with the new selection
+                        const selectedElement = securityElements[parseInt(chosenIndex)];
+                        const selectedRow = selectedElement.closest('tr');
+                        const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
+                        const expertPrice = readElementValue(config.expert_price_selector, selectedRow);
+                        if (sellableQuantity !== null && expertPrice !== null) {
+                            await processExpertData(fund, config, sellableQuantity, expertPrice, localState);
+                        }
+                    });
+                }
+                return; 
+            }
             const selectedRow = selectedElement.closest('tr');
             if (!selectedRow) { log("پیدا کردن ردیف والد ناموفق بود.", 'error'); return; }
             const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
@@ -466,38 +662,8 @@ async function checkSingleFund(fund) {
             log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
             if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
             
-            // 4) ارسال به سرور
-            const finalResponse = await fetch(`${API_BASE_URL}/check-nav`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fund_name: fund.name, nav_on_page: localState[`navCheckData_${fund.name}`].nav_on_page,
-                    total_units: localState[`navCheckData_${fund.name}`].total_units,
-                    sellable_quantity: sellableQuantity, expert_price: expertPrice
-                })
-            });
-            const finalResult = await finalResponse.json();
-            log(`پاسخ نهایی سرور برای ${fund.name}: ${finalResult.suggested_nav}`, 'success');
-            
-            // 5) پس از موفقیت، فلگ را خاموش کن تا در رفرش‌های بعدی دوباره اجرا نشود
-            await chrome.storage.local.set({ [`needsExpertData_${fund.name}`]: false });
-            
-            showNotification({
-                title: `🚨 نیاز به تعدیل NAV - ${fund.name}`,
-                message: `قیمت پیشنهادی جدید: ${finalResult.suggested_nav}`,
-                type: 'error',
-                persistent: true,
-                buttons: [
-                    {
-                        id: 'recheck-btn',
-                        text: 'تعدیل زدم، دوباره چک کن',
-                        callback: () => {
-                            log(`کاربر تایید کرد برای ${fund.name}. در حال بازگشت به صفحه NAV برای بررسی مجدد...`);
-                            const navUrl = config.fund_nav_page_url || config.nav_page_url;
-                            if (navUrl) window.location.href = navUrl;
-                        }
-                    }
-                ]
-            });
+            // Continue with the found data
+            await processExpertData(fund, config, sellableQuantity, expertPrice, localState);
         }
     }
 }
@@ -647,42 +813,12 @@ async function startMonitoring() {
     log("نظارت ربات شروع شد.", 'success');
 }
 
-// Function to check if this tab should be marked as bot-managed
-async function checkPendingBotTab() {
-    try {
-        const stored = await chrome.storage.local.get('pendingBotTab');
-        if (stored.pendingBotTab) {
-            const currentUrl = window.location.href;
-            if (areUrlsMatching(currentUrl, stored.pendingBotTab)) {
-                // This tab was opened by the bot, mark it as bot-managed
-                const resp = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB' });
-                if (resp && resp.ok && resp.tab && resp.tab.id) {
-                    const currentTabId = resp.tab.id;
-                    const botStored = await chrome.storage.local.get('botManagedTabs');
-                    const botManagedTabs = botStored.botManagedTabs || [];
-                    if (!botManagedTabs.includes(currentTabId)) {
-                        botManagedTabs.push(currentTabId);
-                        await chrome.storage.local.set({ 
-                            botManagedTabs: botManagedTabs,
-                            pendingBotTab: null 
-                        });
-                        log(`تب ${currentTabId} به عنوان تب مدیریت شده توسط ربات ثبت شد.`, 'success');
-                    }
-                }
-            }
-        }
-    } catch (e) {
-        log(`خطا در بررسی تب در انتظار: ${e.message}`, 'error');
-    }
-}
+
 
 // Only start monitoring if this is a relevant tab
 shouldRunOnThisTab().then(shouldRun => {
     if (shouldRun) {
         startMonitoring();
-    } else {
-        // Check if this tab should be marked as bot-managed
-        checkPendingBotTab();
     }
 });
 
@@ -697,4 +833,75 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 window.addEventListener('NAV_ASSISTANT_SHOW_NOTIFICATION', async (e) => {
     const opts = e.detail || {};
     await showNotification({ ...(opts || {}), persistent: true });
+});
+
+// Background-driven orchestration for persistent tabs
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+	(async () => {
+		try {
+			if (!request || !request.type) return;
+			if (request.type === 'RUN_EXPERT_REFRESH_AND_READ') {
+				const fundName = request.fund_name;
+				const cfg = request.config || {};
+				// Ensure we are on Expert page by selectors existing
+				const increaseRowsInput = document.querySelector(cfg.increase_rows_selector);
+				const expertSearchButton = document.querySelector(cfg.expert_search_button_selector);
+				if (increaseRowsInput) {
+					increaseRowsInput.value = '';
+					increaseRowsInput.value = 1000;
+					try { increaseRowsInput.dispatchEvent(new Event('input', { bubbles: true })); } catch {}
+					try { increaseRowsInput.dispatchEvent(new Event('change', { bubbles: true })); } catch {}
+				}
+				if (expertSearchButton) {
+					try { expertSearchButton.click(); } catch {}
+					try { const form = expertSearchButton.closest('form'); if (form && form.requestSubmit) form.requestSubmit(); } catch {}
+					try { expertSearchButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); } catch {}
+				}
+				await waitForListStabilize(cfg.securities_list_selector, { stableCycles: 3, intervalMs: 400, maxTries: 50 });
+				const state = await chrome.storage.local.get([
+					`selectedSecurityIndex_${fundName}`,
+					`selectedSecurityName_${fundName}`,
+					`navCheckData_${fundName}`
+				]);
+				const selectedSecurityIndex = state[`selectedSecurityIndex_${fundName}`];
+				let rows = document.querySelectorAll(cfg.securities_list_selector);
+				const normalizedIndex = Math.max(0, parseInt(selectedSecurityIndex || 0) - 1);
+				let selectedElement = rows[normalizedIndex] || rows[selectedSecurityIndex];
+				if (!selectedElement) {
+					const needle = state[`selectedSecurityName_${fundName}`];
+					if (needle) {
+						for (let i = 0; i < rows.length; i++) { if ((rows[i].innerText || '').includes(needle)) { selectedElement = rows[i]; break; } }
+					}
+				}
+				if (!selectedElement) { return sendResponse && sendResponse({ ok: false, error: 'not_found' }); }
+				const row = selectedElement.closest('tr');
+				const sellableQuantity = readElementValue(cfg.sellable_quantity_selector, row);
+				const expertPrice = readElementValue(cfg.expert_price_selector, row);
+				if (sellableQuantity == null || expertPrice == null) { return sendResponse && sendResponse({ ok: false, error: 'read_error' }); }
+				const resp = await fetch(`${API_BASE_URL}/check-nav`, {
+					method: 'POST', headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						fund_name: fundName,
+						nav_on_page: state[`navCheckData_${fundName}`]?.nav_on_page,
+						total_units: state[`navCheckData_${fundName}`]?.total_units,
+						sellable_quantity: sellableQuantity,
+						expert_price: expertPrice
+					})
+				});
+				const data = await resp.json();
+				log(`Expert message-run: suggested_nav=${data.suggested_nav}`, 'success');
+				return sendResponse && sendResponse({ ok: true, data });
+			}
+			if (request.type === 'RUN_NAV_RECHECK') {
+				const cfg = request.config || {};
+				const btn = document.querySelector(cfg.nav_search_button_selector);
+				if (btn) { try { btn.click(); } catch {} }
+				return sendResponse && sendResponse({ ok: true });
+			}
+		} catch (e) {
+			log(`Message handler error: ${e.message}`, 'error');
+			return sendResponse && sendResponse({ ok: false, error: e.message });
+		}
+	})();
+	return true; // keep channel open for async sendResponse
 });

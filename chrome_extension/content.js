@@ -487,10 +487,9 @@ let isBotManagedTab = false;
 
 async function checkIfActiveTab() {
     try {
-        // Get current tab info
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tabs.length > 0) {
-            tabId = tabs[0].id;
+        const resp = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB' });
+        if (resp && resp.ok && resp.tab) {
+            tabId = resp.tab.id;
             isActiveTab = true;
             log(`تب فعال شناسایی شد: ${tabId}`, 'info');
         } else {
@@ -634,9 +633,9 @@ async function checkPendingBotTab() {
             const currentUrl = window.location.href;
             if (areUrlsMatching(currentUrl, stored.pendingBotTab)) {
                 // This tab was opened by the bot, mark it as bot-managed
-                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-                if (tabs.length > 0) {
-                    const currentTabId = tabs[0].id;
+                const resp = await chrome.runtime.sendMessage({ type: 'GET_ACTIVE_TAB' });
+                if (resp && resp.ok && resp.tab && resp.tab.id) {
+                    const currentTabId = resp.tab.id;
                     const botStored = await chrome.storage.local.get('botManagedTabs');
                     const botManagedTabs = botStored.botManagedTabs || [];
                     if (!botManagedTabs.includes(currentTabId)) {

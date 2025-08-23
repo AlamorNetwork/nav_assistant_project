@@ -204,8 +204,15 @@ def save_configuration(config: Configuration, user=Depends(authenticate)):
 
 @app.get("/configurations/{fund_name}")
 def get_configuration(fund_name: str):
-    config = fetchone("SELECT c.*, f.api_symbol, f.type as fund_type FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = %s", (fund_name,))
+    config = fetchone("SELECT c.*, f.api_symbol, f.type as fund_type, f.nav_page_url as fund_nav_page_url, f.expert_price_page_url as fund_expert_page_url FROM configurations c JOIN funds f ON c.fund_id = f.id WHERE f.name = %s", (fund_name,))
     if not config: raise HTTPException(status_code=404, detail=f"Configuration for '{fund_name}' not found.")
+    
+    # Use fund URLs if configuration URLs are not set
+    if not config.get('nav_page_url') and config.get('fund_nav_page_url'):
+        config['nav_page_url'] = config['fund_nav_page_url']
+    if not config.get('expert_price_page_url') and config.get('fund_expert_page_url'):
+        config['expert_price_page_url'] = config['fund_expert_page_url']
+    
     return config
 
 @app.post("/check-nav")

@@ -4,6 +4,8 @@ const API_BASE_URL = 'https://chabokan.irplatforme.ir';
 let fundSelector, statusDiv, startBtn, stopBtn, resetBtn, logBox, clearLogBtn;
 let confirmAdjustedBtn, showLastNotifBtn, adjustmentStatus, logoutBtn, closeTabsBtn;
 let loginScreen, mainInterface, loginBtn, loginUsername, loginPassword, loginStatus;
+let securityInfoContainer, selectedSecurityName, sellableQuantity, expertPrice;
+let refreshSecurityDataBtn, testSelectorsBtn;
 
 // --- مدیریت لاگ ---
 function renderLogEntry(entry) {
@@ -465,6 +467,144 @@ function updateStatus(message, type) {
     statusDiv.style.backgroundColor = bgColors[type] || 'transparent';
 }
 
+// --- توابع مدیریت اطلاعات اوراق ---
+async function loadSecurityInfo() {
+    try {
+        const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
+        if (!activeFund) {
+            hideSecurityInfo();
+            return;
+        }
+
+        const stored = await chrome.storage.local.get([
+            `selectedSecurity_${activeFund}`,
+            `sellableQuantity_${activeFund}`,
+            `expertPrice_${activeFund}`
+        ]);
+
+        const securityName = stored[`selectedSecurity_${activeFund}`];
+        const sellableQty = stored[`sellableQuantity_${activeFund}`];
+        const expertPriceValue = stored[`expertPrice_${activeFund}`];
+
+        if (securityName) {
+            showSecurityInfo(securityName, sellableQty, expertPriceValue);
+        } else {
+            hideSecurityInfo();
+        }
+    } catch (error) {
+        addLog(`خطا در بارگذاری اطلاعات اوراق: ${error.message}`, 'error');
+        hideSecurityInfo();
+    }
+}
+
+function showSecurityInfo(securityName, sellableQty, expertPriceValue) {
+    if (!securityInfoContainer || !selectedSecurityName || !sellableQuantity || !expertPrice) return;
+
+    selectedSecurityName.textContent = securityName || '-';
+    sellableQuantity.textContent = sellableQty !== undefined ? sellableQty.toLocaleString() : '-';
+    expertPrice.textContent = expertPriceValue !== undefined ? expertPriceValue.toLocaleString() : '-';
+
+    securityInfoContainer.style.display = 'block';
+}
+
+function hideSecurityInfo() {
+    if (securityInfoContainer) {
+        securityInfoContainer.style.display = 'none';
+    }
+}
+
+async function refreshSecurityData() {
+    try {
+        const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
+        if (!activeFund) {
+            addLog('ابتدا یک صندوق را فعال کنید.', 'error');
+            return;
+        }
+
+        addLog('در حال بروزرسانی اطلاعات اوراق...', 'info');
+
+        // Get expert tab ID
+        const stored = await chrome.storage.local.get(`expertTabId_${activeFund}`);
+        const expertTabId = stored[`expertTabId_${activeFund}`];
+
+        if (!expertTabId) {
+            addLog('تب Expert یافت نشد. ابتدا صندوق را فعال کنید.', 'error');
+            return;
+        }
+
+        // Send message to expert tab to refresh data
+        const response = await chrome.runtime.sendMessage({
+            type: 'SEND_MESSAGE_TO_TAB',
+            tabId: expertTabId,
+            message: {
+                type: 'REFRESH_SECURITY_DATA',
+                fundName: activeFund
+            }
+        });
+
+        if (response && response.ok && response.data) {
+            const { securityName, sellableQuantity, expertPrice } = response.data;
+            showSecurityInfo(securityName, sellableQuantity, expertPrice);
+            addLog(`اطلاعات بروزرسانی شد: ${securityName}`, 'success');
+        } else {
+            addLog('خطا در بروزرسانی اطلاعات', 'error');
+        }
+
+    } catch (error) {
+        addLog(`خطا در بروزرسانی اطلاعات: ${error.message}`, 'error');
+    }
+}
+
+async function testSelectors() {
+    try {
+        const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
+        if (!activeFund) {
+            addLog('ابتدا یک صندوق را فعال کنید.', 'error');
+            return;
+        }
+
+        addLog('در حال تست سلکتورها...', 'info');
+
+        // Get expert tab ID
+        const stored = await chrome.storage.local.get(`expertTabId_${activeFund}`);
+        const expertTabId = stored[`expertTabId_${activeFund}`];
+
+        if (!expertTabId) {
+            addLog('تب Expert یافت نشد. ابتدا صندوق را فعال کنید.', 'error');
+            return;
+        }
+
+        // Send message to expert tab to test selectors
+        const response = await chrome.runtime.sendMessage({
+            type: 'SEND_MESSAGE_TO_TAB',
+            tabId: expertTabId,
+            message: {
+                type: 'TEST_SELECTORS',
+                fundName: activeFund
+            }
+        });
+
+        if (response && response.ok && response.data) {
+            const { sellable_quantity, expert_price } = response.data;
+            addLog(`نتایج تست سلکتورها:`, 'info');
+            addLog(`  مانده قابل فروش: ${sellable_quantity.count} عنصر یافت شد`, 'info');
+            addLog(`  قیمت کارشناسی: ${expert_price.count} عنصر یافت شد`, 'info');
+            
+            if (sellable_quantity.sampleValues.length > 0) {
+                addLog(`  نمونه مقادیر مانده: ${sellable_quantity.sampleValues.map(v => `${v.text}(${v.number})`).join(', ')}`, 'info');
+            }
+            if (expert_price.sampleValues.length > 0) {
+                addLog(`  نمونه مقادیر قیمت: ${expert_price.sampleValues.map(v => `${v.text}(${v.number})`).join(', ')}`, 'info');
+            }
+        } else {
+            addLog('خطا در تست سلکتورها', 'error');
+        }
+
+    } catch (error) {
+        addLog(`خطا در تست سلکتورها: ${error.message}`, 'error');
+    }
+}
+
 // --- DOM Initialization ---
 function initializeDOMElements() {
     fundSelector = document.getElementById('fundSelector');
@@ -479,6 +619,14 @@ function initializeDOMElements() {
     adjustmentStatus = document.getElementById('adjustmentStatus');
     logoutBtn = document.getElementById('logoutBtn');
     closeTabsBtn = document.getElementById('closeTabsBtn');
+    
+    // Security info elements
+    securityInfoContainer = document.getElementById('securityInfoContainer');
+    selectedSecurityName = document.getElementById('selectedSecurityName');
+    sellableQuantity = document.getElementById('sellableQuantity');
+    expertPrice = document.getElementById('expertPrice');
+    refreshSecurityDataBtn = document.getElementById('refreshSecurityDataBtn');
+    testSelectorsBtn = document.getElementById('testSelectorsBtn');
     
     // Login elements
     loginScreen = document.getElementById('loginScreen');
@@ -508,6 +656,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         addLog(request.payload.message, request.payload.type);
     } else if (request.type === 'OPEN_NEW_TAB') {
         chrome.tabs.create({ url: request.url, active: true });
+    } else if (request.type === 'SECURITY_DATA_UPDATED') {
+        // Handle security data update from content script
+        const { securityName, sellableQuantity, expertPrice } = request.data;
+        showSecurityInfo(securityName, sellableQuantity, expertPrice);
+        addLog(`اطلاعات اوراق بروزرسانی شد: ${securityName}`, 'success');
+    } else if (request.type === 'SELECTOR_TEST_RESULTS') {
+        // Handle selector test results from content script
+        const { sellable_quantity, expert_price } = request.data;
+        addLog(`نتایج تست سلکتورها:`, 'info');
+        addLog(`  مانده قابل فروش: ${sellable_quantity.count} عنصر یافت شد`, 'info');
+        addLog(`  قیمت کارشناسی: ${expert_price.count} عنصر یافت شد`, 'info');
+        
+        if (sellable_quantity.sampleValues.length > 0) {
+            addLog(`  نمونه مقادیر مانده: ${sellable_quantity.sampleValues.map(v => `${v.text}(${v.number})`).join(', ')}`, 'info');
+        }
+        if (expert_price.sampleValues.length > 0) {
+            addLog(`  نمونه مقادیر قیمت: ${expert_price.sampleValues.map(v => `${v.text}(${v.number})`).join(', ')}`, 'info');
+        }
     }
 });
 
@@ -524,6 +690,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Then check auth (which will also load funds if authenticated)
     setTimeout(async () => {
         await checkAuth();
+        await loadSecurityInfo(); // Load security info after auth check
     }, 100); // Small delay to ensure DOM is fully ready
 });
 
@@ -545,6 +712,10 @@ function setupEventListeners() {
     if (clearLogBtn) clearLogBtn.addEventListener('click', clearLogs);
     if (closeTabsBtn) closeTabsBtn.addEventListener('click', closeNavAssistantTabs);
     if (logoutBtn) logoutBtn.addEventListener('click', logout);
+    
+    // Security info events
+    if (refreshSecurityDataBtn) refreshSecurityDataBtn.addEventListener('click', refreshSecurityData);
+    if (testSelectorsBtn) testSelectorsBtn.addEventListener('click', testSelectors);
 }
 
 // دکمه‌های وضعیت تعدیل

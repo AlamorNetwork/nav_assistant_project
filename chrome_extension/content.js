@@ -1,5 +1,5 @@
 const API_BASE_URL = 'https://chabokan.irplatforme.ir';
-let TEST_MODE = false; // حالت پیش‌فرض؛ می‌تواند بر اساس صندوق غیرفعال/فعال شود
+let TEST_MODE = true; // حالت پیش‌فرض؛ می‌تواند بر اساس صندوق غیرفعال/فعال شود
 const MAX_PERSISTED_LOGS = 500;
 let monitoringInterval = null;
 let monitoringIntervalMs = 120000; // 2m inside market hours
@@ -65,6 +65,29 @@ async function processExpertData(fund, config, sellableQuantity, expertPrice, lo
         
         // 5) پس از موفقیت، فلگ را خاموش کن تا در رفرش‌های بعدی دوباره اجرا نشود
         await chrome.storage.local.set({ [`needsExpertData_${fund.name}`]: false });
+        
+        // 6) ذخیره اطلاعات اوراق برای نمایش در popup
+        await chrome.storage.local.set({
+            [`sellableQuantity_${fund.name}`]: sellableQuantity,
+            [`expertPrice_${fund.name}`]: expertPrice
+        });
+        
+        // 7) ارسال پیام به popup برای بروزرسانی اطلاعات
+        try {
+            const stored = await chrome.storage.local.get(`selectedSecurityName_${fund.name}`);
+            const securityName = stored[`selectedSecurityName_${fund.name}`];
+            
+            await chrome.runtime.sendMessage({
+                type: 'SECURITY_DATA_UPDATED',
+                data: {
+                    securityName: securityName,
+                    sellableQuantity: sellableQuantity,
+                    expertPrice: expertPrice
+                }
+            });
+        } catch (e) {
+            // Ignore errors if popup is not open
+        }
         
         await showNotification({
             title: `🚨 نیاز به تعدیل NAV - ${fund.name}`,
@@ -412,6 +435,20 @@ async function checkSingleFund(fund) {
                         [`selectedSecurityName_${fund.name}`]: selectedSecurityName,
                         [`listExpanded_${fund.name}`]: false 
                     });
+                    
+                    // ارسال پیام به popup برای نمایش اطلاعات اوراق
+                    try {
+                        await chrome.runtime.sendMessage({
+                            type: 'SECURITY_DATA_UPDATED',
+                            data: {
+                                securityName: selectedSecurityName,
+                                sellableQuantity: null,
+                                expertPrice: null
+                            }
+                        });
+                    } catch (e) {
+                        // Ignore errors if popup is not open
+                    }
                     log(`اوراق "${selectedSecurityName}" در ردیف ${chosenIndex} برای ${fund.name} انتخاب شد. ارسال فرمان جستجو به تب NAV...`);
                     // Send recheck command to NAV tab instead of navigation
                     const ids = await chrome.storage.local.get([`navTabId_${fund.name}`]);
@@ -986,6 +1023,177 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 				const btn = document.querySelector(cfg.nav_search_button_selector);
 				if (btn) { try { btn.click(); } catch {} }
 				return sendResponse && sendResponse({ ok: true });
+			}
+			if (request.type === 'REFRESH_SECURITY_DATA') {
+				const fundName = request.fundName;
+				try {
+					// Get fund configuration
+					const authStored = await chrome.storage.sync.get('authToken');
+					const token = authStored.authToken || '';
+					const response = await fetch(`${API_BASE_URL}/configurations/${fundName}`, {
+						headers: { 'token': token }
+					});
+					
+					if (!response.ok) {
+						log('خطا در دریافت تنظیمات صندوق', 'error');
+						return sendResponse && sendResponse({ ok: false, error: 'config_error' });
+					}
+					
+					const config = await response.json();
+					
+					// Get current selected security
+					const state = await chrome.storage.local.get([
+						`selectedSecurityIndex_${fundName}`,
+						`selectedSecurityName_${fundName}`
+					]);
+					
+					const selectedSecurityIndex = state[`selectedSecurityIndex_${fundName}`];
+					const selectedSecurityName = state[`selectedSecurityName_${fundName}`];
+					
+					if (!selectedSecurityName) {
+						log('هیچ اوراقی انتخاب نشده است', 'warn');
+						return sendResponse && sendResponse({ ok: false, error: 'no_security_selected' });
+					}
+					
+					// Find the selected row
+					let rows = document.querySelectorAll(config.securities_list_selector);
+					const normalizedIndex = Math.max(0, parseInt(selectedSecurityIndex || 0) - 1);
+					let selectedElement = rows[normalizedIndex] || rows[selectedSecurityIndex];
+					
+					if (!selectedElement) {
+						// Try to find by name
+						for (let i = 0; i < rows.length; i++) {
+							if ((rows[i].innerText || '').includes(selectedSecurityName)) {
+								selectedElement = rows[i];
+								break;
+							}
+						}
+					}
+					
+					if (!selectedElement) {
+						log('اوراق انتخاب شده یافت نشد', 'error');
+						return sendResponse && sendResponse({ ok: false, error: 'security_not_found' });
+					}
+					
+					const row = selectedElement.closest('tr');
+					
+					// Read values
+					let sellableQuantity = readElementValue(config.sellable_quantity_selector, row);
+					let expertPrice = readElementValue(config.expert_price_selector, row);
+					
+					if (sellableQuantity == null || expertPrice == null) {
+						log('مقادیر خالی است؛ در انتظار مقداردهی...', 'warn');
+						sellableQuantity = await waitForNumericValue(config.sellable_quantity_selector, row, { intervalMs: 300, maxTries: 20 });
+						expertPrice = await waitForNumericValue(config.expert_price_selector, row, { intervalMs: 300, maxTries: 20 });
+					}
+					
+					// Store the values
+					await chrome.storage.local.set({
+						[`sellableQuantity_${fundName}`]: sellableQuantity,
+						[`expertPrice_${fundName}`]: expertPrice
+					});
+					
+					log(`اطلاعات بروزرسانی شد: مانده=${sellableQuantity}, قیمت=${expertPrice}`, 'success');
+					
+					// ارسال نتایج به popup
+					try {
+						await chrome.runtime.sendMessage({
+							type: 'SECURITY_DATA_UPDATED',
+							data: {
+								securityName: selectedSecurityName,
+								sellableQuantity: sellableQuantity,
+								expertPrice: expertPrice
+							}
+						});
+					} catch (e) {
+						// Ignore errors if popup is not open
+					}
+					
+					return sendResponse && sendResponse({ 
+						ok: true, 
+						data: { 
+							securityName: selectedSecurityName,
+							sellableQuantity: sellableQuantity,
+							expertPrice: expertPrice
+						}
+					});
+					
+				} catch (error) {
+					log(`خطا در بروزرسانی اطلاعات: ${error.message}`, 'error');
+					return sendResponse && sendResponse({ ok: false, error: error.message });
+				}
+			}
+			if (request.type === 'TEST_SELECTORS') {
+				const fundName = request.fundName;
+				try {
+					// Get fund configuration
+					const authStored = await chrome.storage.sync.get('authToken');
+					const token = authStored.authToken || '';
+					const response = await fetch(`${API_BASE_URL}/configurations/${fundName}`, {
+						headers: { 'token': token }
+					});
+					
+					if (!response.ok) {
+						log('خطا در دریافت تنظیمات صندوق', 'error');
+						return sendResponse && sendResponse({ ok: false, error: 'config_error' });
+					}
+					
+					const config = await response.json();
+					
+					// Test selectors
+					const sellableElements = document.querySelectorAll(config.sellable_quantity_selector);
+					const expertElements = document.querySelectorAll(config.expert_price_selector);
+					
+					const results = {
+						sellable_quantity: {
+							selector: config.sellable_quantity_selector,
+							count: sellableElements.length,
+							sampleValues: []
+						},
+						expert_price: {
+							selector: config.expert_price_selector,
+							count: expertElements.length,
+							sampleValues: []
+						}
+					};
+					
+					// Get sample values
+					for (let i = 0; i < Math.min(5, sellableElements.length); i++) {
+						const text = sellableElements[i].innerText || sellableElements[i].textContent || '';
+						const number = parseFloat(text.replace(/[^\d.-]/g, ''));
+						results.sellable_quantity.sampleValues.push({
+							text: text.trim(),
+							number: number
+						});
+					}
+					
+					for (let i = 0; i < Math.min(5, expertElements.length); i++) {
+						const text = expertElements[i].innerText || expertElements[i].textContent || '';
+						const number = parseFloat(text.replace(/[^\d.-]/g, ''));
+						results.expert_price.sampleValues.push({
+							text: text.trim(),
+							number: number
+						});
+					}
+					
+					log(`تست سلکتورها: sellable=${sellableElements.length}, expert=${expertElements.length}`, 'info');
+					
+					// ارسال نتایج به popup
+					try {
+						await chrome.runtime.sendMessage({
+							type: 'SELECTOR_TEST_RESULTS',
+							data: results
+						});
+					} catch (e) {
+						// Ignore errors if popup is not open
+					}
+					
+					return sendResponse && sendResponse({ ok: true, data: results });
+					
+				} catch (error) {
+					log(`خطا در تست سلکتورها: ${error.message}`, 'error');
+					return sendResponse && sendResponse({ ok: false, error: error.message });
+				}
 			}
 		} catch (e) {
 			log(`Message handler error: ${e.message}`, 'error');

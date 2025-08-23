@@ -66,11 +66,23 @@ async function processExpertData(fund, config, sellableQuantity, expertPrice, lo
         // 5) پس از موفقیت، فلگ را خاموش کن تا در رفرش‌های بعدی دوباره اجرا نشود
         await chrome.storage.local.set({ [`needsExpertData_${fund.name}`]: false });
         
-        // 6) ذخیره اطلاعات اوراق برای نمایش در popup
-        await chrome.storage.local.set({
-            [`sellableQuantity_${fund.name}`]: sellableQuantity,
-            [`expertPrice_${fund.name}`]: expertPrice
-        });
+                 // 6) ذخیره اطلاعات اوراق برای نمایش در popup
+         await chrome.storage.local.set({
+             [`sellableQuantity_${fund.name}`]: sellableQuantity,
+             [`expertPrice_${fund.name}`]: expertPrice
+         });
+         
+         // 6.5) مقایسه شماره ردیف برای دیباگ
+         const actualRowNumber = await chrome.storage.local.get(`actualRowNumber_${fund.name}`);
+         if (actualRowNumber[`actualRowNumber_${fund.name}`]) {
+             log(`🔍 مقایسه ردیف: انتخاب شده=${actualRowNumber[`actualRowNumber_${fund.name}`]}, خوانده شده=${values.rowNumber}`, 'info');
+             
+             // اگر شماره ردیف‌ها متفاوت بود، از شماره ردیف واقعی استفاده کن
+             if (actualRowNumber[`actualRowNumber_${fund.name}`] !== values.rowNumber) {
+                 log(`⚠️ شماره ردیف متفاوت! استفاده از شماره ردیف واقعی: ${actualRowNumber[`actualRowNumber_${fund.name}`]}`, 'warn');
+                 values.rowNumber = actualRowNumber[`actualRowNumber_${fund.name}`];
+             }
+         }
         
         // 7) ارسال پیام به popup برای بروزرسانی اطلاعات
         try {
@@ -194,35 +206,121 @@ function readElementValue(selector, parentElement = document) {
     } catch (e) { log(`Error reading selector ${selector}: ${e.message}`, 'error'); return null; }
 }
 
-// Try to read a numeric cell by locating the column via header text
-function getColumnIndexByHeader(rowElement, headerSubstring) {
-    try {
-        const table = rowElement?.closest('table');
-        if (!table) return null;
-        const headers = table.querySelectorAll('thead th, thead td');
-        for (let idx = 0; idx < headers.length; idx++) {
-            const txt = (headers[idx].innerText || headers[idx].textContent || '').trim();
-            if (txt && txt.includes(headerSubstring)) {
-                return idx + 1; // nth-child is 1-based
+
+
+// ستون‌های ثابت (بر اساس تجربه)
+const FIXED_COLUMNS = {
+    name: 1,      // ستون نام
+    sellable: 3,  // ستون مانده قابل فروش
+    expert: 12    // ستون قیمت کارشناسی
+};
+
+// تابع خواندن مقادیر از ستون‌های ثابت
+function readValuesFromFixedColumns(rowElement, targetRowNumber = null) {
+    const values = {
+        name: null,
+        sellable: null,
+        expert: null,
+        rowNumber: null
+    };
+    
+    if (!rowElement) return values;
+    
+    // پیدا کردن شماره ردیف
+    const table = rowElement.closest('table');
+    if (table) {
+        // ابتدا تمام ردیف‌های جدول رو بگیریم (شامل header هم)
+        const allRows = table.querySelectorAll('tr');
+        const tbodyRows = table.querySelectorAll('tbody tr');
+        
+        // شماره ردیف در tbody
+        let tbodyRowNumber = null;
+        for (let i = 0; i < tbodyRows.length; i++) {
+            if (tbodyRows[i] === rowElement) {
+                tbodyRowNumber = i + 1;
+                break;
             }
         }
-        return null;
-    } catch { return null; }
-}
-
-async function readValueByHeader(rowElement, headerCandidates) {
-    for (const headerText of headerCandidates) {
-        const colIndex = getColumnIndexByHeader(rowElement, headerText);
-        if (colIndex) {
-            const cell = rowElement.querySelector(`td:nth-child(${colIndex})`);
-            const val = parseNumberLoose(cell ? (cell.innerText || cell.textContent || '') : '');
-            if (val !== null) return val;
-            // wait briefly if value might arrive
-            const waited = await waitForNumericValue(`td:nth-child(${colIndex})`, rowElement, { intervalMs: 300, maxTries: 10 });
-            if (waited !== null) return waited;
+        
+        // شماره ردیف در کل جدول
+        let totalRowNumber = null;
+        for (let i = 0; i < allRows.length; i++) {
+            if (allRows[i] === rowElement) {
+                totalRowNumber = i + 1;
+                break;
+            }
+        }
+        
+        // اگر شماره ردیف هدف مشخص شده، از اون استفاده کن
+        if (targetRowNumber && targetRowNumber > 0 && targetRowNumber <= tbodyRows.length) {
+            values.rowNumber = targetRowNumber;
+            // از ردیف هدف داده بخون
+            const targetRow = tbodyRows[targetRowNumber - 1];
+            if (targetRow) {
+                // خواندن نام از ستون 1
+                const nameCell = targetRow.querySelector(`td:nth-child(${FIXED_COLUMNS.name})`);
+                if (nameCell) {
+                    values.name = nameCell.innerText.trim();
+                }
+                
+                // خواندن مانده قابل فروش از ستون 3
+                const sellableCell = targetRow.querySelector(`td:nth-child(${FIXED_COLUMNS.sellable})`);
+                if (sellableCell) {
+                    // ابتدا از محتوای اصلی سلول
+                    let val = parseNumberLoose(sellableCell.innerText || sellableCell.textContent || '');
+                    if (val !== null) {
+                        values.sellable = val;
+                        log(`مانده قابل فروش از ردیف ${targetRowNumber} ستون ${FIXED_COLUMNS.sellable}: ${val}`, 'success');
+                    } else {
+                        // اگر عدد نبود، از font elements
+                        const fonts = sellableCell.querySelectorAll('font');
+                        for (const font of fonts) {
+                            val = parseNumberLoose(font.innerText || font.textContent || '');
+                            if (val !== null) {
+                                values.sellable = val;
+                                log(`مانده قابل فروش از font در ردیف ${targetRowNumber} ستون ${FIXED_COLUMNS.sellable}: ${val}`, 'success');
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                // خواندن قیمت کارشناسی از ستون 12
+                const expertCell = targetRow.querySelector(`td:nth-child(${FIXED_COLUMNS.expert})`);
+                if (expertCell) {
+                    // ابتدا از محتوای اصلی سلول
+                    let val = parseNumberLoose(expertCell.innerText || expertCell.textContent || '');
+                    if (val !== null) {
+                        values.expert = val;
+                        log(`قیمت کارشناسی از ردیف ${targetRowNumber} ستون ${FIXED_COLUMNS.expert}: ${val}`, 'success');
+                    } else {
+                        // اگر عدد نبود، از font elements
+                        const fonts = expertCell.querySelectorAll('font');
+                        for (const font of fonts) {
+                            val = parseNumberLoose(font.innerText || font.textContent || '');
+                            if (val !== null) {
+                                values.expert = val;
+                                log(`قیمت کارشناسی از font در ردیف ${targetRowNumber} ستون ${FIXED_COLUMNS.expert}: ${val}`, 'success');
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // استفاده از شماره ردیف tbody (که معمولاً درست‌تر است)
+            values.rowNumber = tbodyRowNumber;
+            
+            // لاگ برای دیباگ
+            if (values.name) {
+                log(`🔍 دیباگ شماره ردیف: tbody=${tbodyRowNumber}, total=${totalRowNumber}, نام="${values.name}"`, 'info');
+            }
         }
     }
-    return null;
+    
+
+    
+    return values;
 }
 
 function areUrlsMatching(currentUrl, configuredUrl) {
@@ -247,6 +345,10 @@ function askForSecurity(securities, callback) {
             <h3>انتخاب اوراق</h3>
             <p>لطفاً اوراق مورد نظر برای محاسبه تعدیل را انتخاب کنید:</p>
             <select id="security-selector">${optionsHTML}</select>
+            <div id="selected-row-info" style="margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 5px; display: none;">
+                <strong>اطلاعات ردیف انتخابی:</strong><br>
+                <span id="row-number-display">-</span>
+            </div>
             <button id="confirm-security-btn">تایید و ادامه</button>
         </div>
     `;
@@ -256,6 +358,41 @@ function askForSecurity(securities, callback) {
     modal.querySelector('select').style.width = '100%';
     modal.querySelector('button').style.width = '100%';
     document.body.appendChild(modal);
+    
+    // Event listener برای نمایش شماره ردیف
+    const selector = document.getElementById('security-selector');
+    const rowInfo = document.getElementById('selected-row-info');
+    const rowDisplay = document.getElementById('row-number-display');
+    
+    selector.addEventListener('change', () => {
+        const selectedIndex = parseInt(selector.value);
+        const selectedName = securities[selectedIndex];
+        
+        // پیدا کردن ردیف واقعی در جدول
+        const table = document.querySelector('#adjustedIpList');
+        if (table) {
+            const tbodyRows = table.querySelectorAll('tbody tr');
+            let foundRowNumber = -1;
+            
+            for (let i = 0; i < tbodyRows.length; i++) {
+                const nameCell = tbodyRows[i].querySelector('td:nth-child(1)');
+                if (nameCell && nameCell.innerText.trim() === selectedName) {
+                    foundRowNumber = i + 1;
+                    break;
+                }
+            }
+            
+            if (foundRowNumber > 0) {
+                rowDisplay.textContent = `نام: "${selectedName}" - شماره ردیف واقعی: ${foundRowNumber}`;
+                rowInfo.style.display = 'block';
+                log(`🔍 دیباگ انتخاب: نام="${selectedName}", ردیف=${foundRowNumber}`, 'info');
+            } else {
+                rowDisplay.textContent = `نام: "${selectedName}" - ردیف یافت نشد`;
+                rowInfo.style.display = 'block';
+            }
+        }
+    });
+    
     document.getElementById('confirm-security-btn').onclick = () => {
         const selectedIndex = document.getElementById('security-selector').value;
         modal.remove();
@@ -429,12 +566,30 @@ async function checkSingleFund(fund) {
                 log(`تعداد ${securityElements.length} اوراق برای ${fund.name} یافت شد.`, 'success');
             const securities = Array.from(securityElements).map(el => el.innerText.trim());
             askForSecurity(securities, async (chosenIndex) => {
-                    const selectedSecurityName = securities[parseInt(chosenIndex)];
-                    await chrome.storage.local.set({ 
-                        [`selectedSecurityIndex_${fund.name}`]: parseInt(chosenIndex), 
-                        [`selectedSecurityName_${fund.name}`]: selectedSecurityName,
-                        [`listExpanded_${fund.name}`]: false 
-                    });
+                                         const selectedSecurityName = securities[parseInt(chosenIndex)];
+                     
+                     // پیدا کردن شماره ردیف واقعی برای دیباگ
+                     const table = document.querySelector('#adjustedIpList');
+                     let actualRowNumber = -1;
+                     if (table) {
+                         const tbodyRows = table.querySelectorAll('tbody tr');
+                         for (let i = 0; i < tbodyRows.length; i++) {
+                             const nameCell = tbodyRows[i].querySelector('td:nth-child(1)');
+                             if (nameCell && nameCell.innerText.trim() === selectedSecurityName) {
+                                 actualRowNumber = i + 1;
+                                 break;
+                             }
+                         }
+                     }
+                     
+                     await chrome.storage.local.set({ 
+                         [`selectedSecurityIndex_${fund.name}`]: parseInt(chosenIndex), 
+                         [`selectedSecurityName_${fund.name}`]: selectedSecurityName,
+                         [`listExpanded_${fund.name}`]: false,
+                         [`actualRowNumber_${fund.name}`]: actualRowNumber // ذخیره شماره ردیف واقعی
+                     });
+                     
+                     log(`🔍 انتخاب اوراق: نام="${selectedSecurityName}", ردیف واقعی=${actualRowNumber}`, 'info');
                     
                     // ارسال پیام به popup برای نمایش اطلاعات اوراق
                     try {
@@ -670,40 +825,113 @@ async function checkSingleFund(fund) {
                 if (allSecurityElements.length === 0) { log("لیست اوراق پس از تلاش مجدد هم خالی است.", 'error'); return; }
             }
             
-            // 3) خواندن از ردیف انتخابی
-            // Convert possible 1-based saved index to 0-based
-            const normalizedIndex = Math.max(0, parseInt(selectedSecurityIndex || 0) - 1);
-            const selectedElement = allSecurityElements[normalizedIndex] || allSecurityElements[selectedSecurityIndex];
-            if (!selectedElement) { 
-                log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود. تعداد کل: ${allSecurityElements.length}`, 'error'); 
+            // 3) خواندن از ردیف انتخابی - همیشه از جستجو بر اساس نام استفاده کن
+            let selectedElement = null;
+            let selectedRow = null;
+            
+            // ابتدا سعی کن از نام پیدا کنی (با استفاده از ستون‌های ثابت)
+            const securityName = await chrome.storage.local.get(`selectedSecurityName_${fund.name}`);
+            if (securityName[`selectedSecurityName_${fund.name}`]) {
+                const targetName = securityName[`selectedSecurityName_${fund.name}`];
+                log(`تلاش برای یافتن اوراق با نام: "${targetName}"`, 'info');
                 
-                // Try to find the security by name instead of index
-                const securityName = await chrome.storage.local.get(`selectedSecurityName_${fund.name}`);
-                if (securityName[`selectedSecurityName_${fund.name}`]) {
-                    log(`تلاش برای یافتن اوراق با نام: ${securityName[`selectedSecurityName_${fund.name}`]}`, 'info');
-                    let foundIndex = -1;
-                    for (let i = 0; i < allSecurityElements.length; i++) {
-                        const elementText = allSecurityElements[i].innerText.trim();
-                        if (elementText.includes(securityName[`selectedSecurityName_${fund.name}`])) {
-                            foundIndex = i;
-                            break;
+                // جستجو در تمام ردیف‌ها (مثل xpath)
+                let foundRow = null;
+                let foundIndex = -1;
+                let bestMatch = null;
+                let bestMatchScore = 0;
+                
+                for (let i = 0; i < allSecurityElements.length; i++) {
+                    const element = allSecurityElements[i];
+                    const row = element.closest('tr');
+                    
+                    if (row) {
+                        // خواندن نام از ستون ثابت (ستون 1)
+                        const nameCell = row.querySelector(`td:nth-child(${FIXED_COLUMNS.name})`);
+                        if (nameCell) {
+                            const rowName = nameCell.innerText.trim();
+                            
+                            // تطبیق دقیق
+                            if (rowName === targetName) {
+                                foundRow = row;
+                                foundIndex = i;
+                                log(`اوراق با تطبیق دقیق در ردیف ${i + 1}: "${rowName}"`, 'success');
+                                break;
+                            }
+                            
+                            // تطبیق جزئی
+                            if (rowName.includes(targetName) || targetName.includes(rowName)) {
+                                const matchScore = Math.min(rowName.length, targetName.length) / Math.max(rowName.length, targetName.length);
+                                if (matchScore > bestMatchScore) {
+                                    bestMatchScore = matchScore;
+                                    bestMatch = { row: row, index: i, name: rowName };
+                                }
+                            }
                         }
                     }
-                    if (foundIndex >= 0) {
-                        log(`اوراق در ردیف ${foundIndex} یافت شد.`, 'success');
-                        const selectedElement = allSecurityElements[foundIndex];
-                        const selectedRow = selectedElement.closest('tr');
-                        if (!selectedRow) { log("پیدا کردن ردیف والد ناموفق بود.", 'error'); return; }
-                        const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
-                        const expertPrice = readElementValue(config.expert_price_selector, selectedRow);
-                        log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
-                        if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
-                        
-                        // Continue with the found data
-                        await processExpertData(fund, config, sellableQuantity, expertPrice, localState);
-                        return;
-                    }
                 }
+                
+                // استفاده از بهترین تطبیق اگر تطبیق دقیق پیدا نشد
+                if (!foundRow && bestMatch && bestMatchScore > 0.5) {
+                    foundRow = bestMatch.row;
+                    foundIndex = bestMatch.index;
+                    log(`اوراق با بهترین تطبیق (${Math.round(bestMatchScore * 100)}%) در ردیف ${foundIndex + 1}: "${bestMatch.name}"`, 'success');
+                }
+                
+                                 if (foundRow) {
+                     selectedElement = allSecurityElements[foundIndex];
+                     selectedRow = foundRow;
+                     
+                     // Log the found row details for debugging
+                     const rowText = selectedRow.innerText.trim();
+                     log(`ردیف یافت شده: "${rowText.substring(0, 100)}..."`, 'info');
+                     
+                     // دیباگ: نمایش شماره ردیف واقعی
+                     const table = selectedRow.closest('table');
+                     if (table) {
+                         const allRows = table.querySelectorAll('tr');
+                         const tbodyRows = table.querySelectorAll('tbody tr');
+                         
+                         let tbodyIndex = -1;
+                         let totalIndex = -1;
+                         
+                         for (let i = 0; i < tbodyRows.length; i++) {
+                             if (tbodyRows[i] === selectedRow) {
+                                 tbodyIndex = i + 1;
+                                 break;
+                             }
+                         }
+                         
+                         for (let i = 0; i < allRows.length; i++) {
+                             if (allRows[i] === selectedRow) {
+                                 totalIndex = i + 1;
+                                 break;
+                             }
+                         }
+                         
+                         log(`🔍 دیباگ انتخاب ردیف: tbody=${tbodyIndex}, total=${totalIndex}, target="${targetName}"`, 'info');
+                     }
+                 } else {
+                     log(`اوراق "${targetName}" در جدول یافت نشد.`, 'warn');
+                     log(`اوراق‌های موجود: ${allSecurityElements.map(el => `"${el.innerText.trim()}"`).join(', ')}`, 'info');
+                 }
+            }
+            
+            // اگر از نام پیدا نشد، از ایندکس استفاده کن
+            if (!selectedElement) {
+                log(`تلاش برای یافتن اوراق با ایندکس: ${selectedSecurityIndex}`, 'info');
+                const normalizedIndex = Math.max(0, parseInt(selectedSecurityIndex || 0) - 1);
+                selectedElement = allSecurityElements[normalizedIndex] || allSecurityElements[selectedSecurityIndex];
+                
+                if (selectedElement) {
+                    selectedRow = selectedElement.closest('tr');
+                    log(`اوراق با ایندکس ${normalizedIndex} یافت شد.`, 'success');
+                } else {
+                    log(`پیدا کردن اوراق در ردیف ${selectedSecurityIndex} ناموفق بود. تعداد کل: ${allSecurityElements.length}`, 'error');
+                }
+            }
+            
+            if (!selectedElement || !selectedRow) {
                 
                 // If we still can't find the security, ask user to select again
                 log("اوراق انتخابی یافت نشد. درخواست انتخاب مجدد...", 'warn');
@@ -723,8 +951,12 @@ async function checkSingleFund(fund) {
                         // Continue with the new selection
                         const selectedElement = securityElements[parseInt(chosenIndex)];
                         const selectedRow = selectedElement.closest('tr');
-                        const sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
-                        const expertPrice = readElementValue(config.expert_price_selector, selectedRow);
+                        
+                        // خواندن مقادیر از ستون‌های ثابت
+                        const values = readValuesFromFixedColumns(selectedRow);
+                        let sellableQuantity = values.sellable;
+                        let expertPrice = values.expert;
+                        
                         if (sellableQuantity !== null && expertPrice !== null) {
                             await processExpertData(fund, config, sellableQuantity, expertPrice, localState);
                         }
@@ -732,25 +964,62 @@ async function checkSingleFund(fund) {
                 }
                 return; 
             }
-            const selectedRow = selectedElement.closest('tr');
+            selectedRow = selectedElement.closest('tr');
             if (!selectedRow) { log("پیدا کردن ردیف والد ناموفق بود.", 'error'); return; }
-            let sellableQuantity = readElementValue(config.sellable_quantity_selector, selectedRow);
-            let expertPrice = readElementValue(config.expert_price_selector, selectedRow);
-            if (sellableQuantity === null || expertPrice === null) {
-                log('مقادیر عددی موجود نیست؛ در انتظار پر شدن مقادیر...', 'warn');
-                // Wait up to ~6s for numbers to populate
-                sellableQuantity = await waitForNumericValue(config.sellable_quantity_selector, selectedRow, { intervalMs: 300, maxTries: 20 });
-                expertPrice = await waitForNumericValue(config.expert_price_selector, selectedRow, { intervalMs: 300, maxTries: 20 });
-                // As a fallback, try by header names if selectors still fail
-                if (sellableQuantity === null) {
-                    sellableQuantity = await readValueByHeader(selectedRow, ['مانده قابل فروش', 'قابل فروش', 'مانده']);
+            
+                                                     // استفاده از ستون‌های ثابت برای خواندن مقادیر
+               log('استفاده از ستون‌های ثابت برای خواندن مقادیر', 'info');
+               
+               // دریافت شماره ردیف واقعی
+               const actualRowNumber = await chrome.storage.local.get(`actualRowNumber_${fund.name}`);
+               const targetRowNumber = actualRowNumber[`actualRowNumber_${fund.name}`];
+               
+               const values = readValuesFromFixedColumns(selectedRow, targetRowNumber);
+               let sellableQuantity = values.sellable;
+               let expertPrice = values.expert;
+             
+             log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
+             
+             // دیباگ: نمایش داده‌های ردیف‌های اطراف
+             const table = selectedRow.closest('table');
+             if (table) {
+                 const tbodyRows = table.querySelectorAll('tbody tr');
+                 const currentIndex = Array.from(tbodyRows).indexOf(selectedRow);
+                 
+                 log(`🔍 دیباگ داده‌های ردیف‌های اطراف:`, 'info');
+                 
+                 // نمایش ردیف‌های قبل و بعد
+                 for (let i = Math.max(0, currentIndex - 2); i <= Math.min(tbodyRows.length - 1, currentIndex + 2); i++) {
+                     const row = tbodyRows[i];
+                     const nameCell = row.querySelector(`td:nth-child(${FIXED_COLUMNS.name})`);
+                     const sellableCell = row.querySelector(`td:nth-child(${FIXED_COLUMNS.sellable})`);
+                     const expertCell = row.querySelector(`td:nth-child(${FIXED_COLUMNS.expert})`);
+                     
+                     const name = nameCell ? nameCell.innerText.trim() : '';
+                     const sellable = sellableCell ? parseNumberLoose(sellableCell.innerText || sellableCell.textContent || '') : null;
+                     const expert = expertCell ? parseNumberLoose(expertCell.innerText || expertCell.textContent || '') : null;
+                     
+                     const marker = i === currentIndex ? '👉' : '  ';
+                     log(`${marker} ردیف ${i + 1}: نام="${name}", مانده=${sellable}, قیمت=${expert}`, 'info');
+                 }
+             }
+            if (sellableQuantity === null || expertPrice === null) { 
+                log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); 
+                log("تلاش برای نمایش اطلاعات جدول برای دیباگ...", 'info');
+                
+                // نمایش اطلاعات جدول برای دیباگ
+                if (table) {
+                    const thead = table.querySelector('thead');
+                    if (thead) {
+                        const headers = thead.querySelectorAll('th, td');
+                        log(`ستون‌های موجود: ${Array.from(headers).map((h, i) => `${i + 1}: "${h.innerText.trim()}"`).join(', ')}`, 'info');
+                    }
                 }
-                if (expertPrice === null) {
-                    expertPrice = await readValueByHeader(selectedRow, ['قیمت کارشناسی', 'کارشناسی']);
-                }
+                
+                const rowCells = selectedRow.querySelectorAll('td');
+                log(`محتویات ردیف انتخابی: ${Array.from(rowCells).map((c, i) => `${i + 1}: "${c.innerText.trim()}"`).join(', ')}`, 'info');
+                return; 
             }
-            log(`sellableQuantity=${sellableQuantity}, expertPrice=${expertPrice}`);
-            if (sellableQuantity === null || expertPrice === null) { log("خواندن داده از ردیف انتخابی ناموفق بود.", 'error'); return; }
 
             // Continue with the found data
             await processExpertData(fund, config, sellableQuantity, expertPrice, localState);
@@ -967,19 +1236,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 				}
 				if (!selectedElement) { return sendResponse && sendResponse({ ok: false, error: 'not_found' }); }
 				const row = selectedElement.closest('tr');
-				let sellableQuantity = readElementValue(cfg.sellable_quantity_selector, row);
-				let expertPrice = readElementValue(cfg.expert_price_selector, row);
-				if (sellableQuantity == null || expertPrice == null) {
-					log('مقادیر Expert خالی است؛ در انتظار مقداردهی...', 'warn');
-					sellableQuantity = await waitForNumericValue(cfg.sellable_quantity_selector, row, { intervalMs: 300, maxTries: 20 });
-					expertPrice = await waitForNumericValue(cfg.expert_price_selector, row, { intervalMs: 300, maxTries: 20 });
-					if (sellableQuantity === null) {
-						sellableQuantity = await readValueByHeader(row, ['مانده قابل فروش', 'قابل فروش', 'مانده']);
-					}
-					if (expertPrice === null) {
-						expertPrice = await readValueByHeader(row, ['قیمت کارشناسی', 'کارشناسی']);
-					}
-				}
+				const values = readValuesFromFixedColumns(row);
+				let sellableQuantity = values.sellable;
+				let expertPrice = values.expert;
 				if (sellableQuantity == null || expertPrice == null) { return sendResponse && sendResponse({ ok: false, error: 'read_error' }); }
 				const resp = await fetch(`${API_BASE_URL}/check-nav`, {
 					method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1061,12 +1320,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 					let selectedElement = rows[normalizedIndex] || rows[selectedSecurityIndex];
 					
 					if (!selectedElement) {
-						// Try to find by name
+						// Try to find by name with improved logic
+						log(`تلاش برای یافتن اوراق با نام: "${selectedSecurityName}"`, 'info');
+						
+						let bestMatch = -1;
+						let bestMatchScore = 0;
+						
 						for (let i = 0; i < rows.length; i++) {
-							if ((rows[i].innerText || '').includes(selectedSecurityName)) {
+							const elementText = rows[i].innerText.trim();
+							
+							// Exact match
+							if (elementText === selectedSecurityName) {
 								selectedElement = rows[i];
+								log(`اوراق با تطبیق دقیق در ردیف ${i} یافت شد.`, 'success');
 								break;
 							}
+							
+							// Partial match with scoring
+							if (elementText.includes(selectedSecurityName) || selectedSecurityName.includes(elementText)) {
+								const matchScore = Math.min(elementText.length, selectedSecurityName.length) / Math.max(elementText.length, selectedSecurityName.length);
+								if (matchScore > bestMatchScore) {
+									bestMatchScore = matchScore;
+									bestMatch = i;
+								}
+							}
+						}
+						
+						// Use best match if no exact match found
+						if (!selectedElement && bestMatch >= 0 && bestMatchScore > 0.5) {
+							selectedElement = rows[bestMatch];
+							log(`اوراق با بهترین تطبیق (${Math.round(bestMatchScore * 100)}%) در ردیف ${bestMatch} یافت شد.`, 'success');
 						}
 					}
 					
@@ -1077,23 +1360,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 					
 					const row = selectedElement.closest('tr');
 					
-					// Read values
-					let sellableQuantity = readElementValue(config.sellable_quantity_selector, row);
-					let expertPrice = readElementValue(config.expert_price_selector, row);
+					// Read values using fixed columns
+					// دریافت شماره ردیف واقعی
+					const actualRowNumber = await chrome.storage.local.get(`actualRowNumber_${fundName}`);
+					const targetRowNumber = actualRowNumber[`actualRowNumber_${fundName}`];
 					
-					if (sellableQuantity == null || expertPrice == null) {
-						log('مقادیر خالی است؛ در انتظار مقداردهی...', 'warn');
-						sellableQuantity = await waitForNumericValue(config.sellable_quantity_selector, row, { intervalMs: 300, maxTries: 20 });
-						expertPrice = await waitForNumericValue(config.expert_price_selector, row, { intervalMs: 300, maxTries: 20 });
-					}
+					const values = readValuesFromFixedColumns(row, targetRowNumber);
+					let sellableQuantity = values.sellable;
+					let expertPrice = values.expert;
 					
-					// Store the values
-					await chrome.storage.local.set({
-						[`sellableQuantity_${fundName}`]: sellableQuantity,
-						[`expertPrice_${fundName}`]: expertPrice
-					});
+					                    // Store the values
+                    await chrome.storage.local.set({
+                        [`sellableQuantity_${fundName}`]: sellableQuantity,
+                        [`expertPrice_${fundName}`]: expertPrice,
+                        [`rowNumber_${fundName}`]: values.rowNumber
+                    });
+                    
+                                         // مقایسه با شماره ردیف واقعی
+                     const storedActualRowNumber = await chrome.storage.local.get(`actualRowNumber_${fundName}`);
+                     if (storedActualRowNumber[`actualRowNumber_${fundName}`] && storedActualRowNumber[`actualRowNumber_${fundName}`] !== values.rowNumber) {
+                         log(`⚠️ شماره ردیف متفاوت در REFRESH! استفاده از شماره ردیف واقعی: ${storedActualRowNumber[`actualRowNumber_${fundName}`]}`, 'warn');
+                         values.rowNumber = storedActualRowNumber[`actualRowNumber_${fundName}`];
+                         
+                         // بروزرسانی storage با شماره ردیف درست
+                         await chrome.storage.local.set({
+                             [`rowNumber_${fundName}`]: values.rowNumber
+                         });
+                     }
 					
-					log(`اطلاعات بروزرسانی شد: مانده=${sellableQuantity}, قیمت=${expertPrice}`, 'success');
+					log(`اطلاعات بروزرسانی شد: ردیف ${values.rowNumber}, مانده=${sellableQuantity}, قیمت=${expertPrice}`, 'success');
 					
 					// ارسال نتایج به popup
 					try {
@@ -1102,7 +1397,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 							data: {
 								securityName: selectedSecurityName,
 								sellableQuantity: sellableQuantity,
-								expertPrice: expertPrice
+								expertPrice: expertPrice,
+								rowNumber: values.rowNumber
 							}
 						});
 					} catch (e) {
@@ -1114,7 +1410,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 						data: { 
 							securityName: selectedSecurityName,
 							sellableQuantity: sellableQuantity,
-							expertPrice: expertPrice
+							expertPrice: expertPrice,
+							rowNumber: values.rowNumber
 						}
 					});
 					
@@ -1126,57 +1423,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			if (request.type === 'TEST_SELECTORS') {
 				const fundName = request.fundName;
 				try {
-					// Get fund configuration
-					const authStored = await chrome.storage.sync.get('authToken');
-					const token = authStored.authToken || '';
-					const response = await fetch(`${API_BASE_URL}/configurations/${fundName}`, {
-						headers: { 'token': token }
-					});
-					
-					if (!response.ok) {
-						log('خطا در دریافت تنظیمات صندوق', 'error');
-						return sendResponse && sendResponse({ ok: false, error: 'config_error' });
+					// Test fixed columns instead of selectors
+					const table = document.querySelector('#adjustedIpList');
+					if (!table) {
+						log('جدول یافت نشد', 'error');
+						return sendResponse && sendResponse({ ok: false, error: 'table_not_found' });
 					}
 					
-					const config = await response.json();
-					
-					// Test selectors
-					const sellableElements = document.querySelectorAll(config.sellable_quantity_selector);
-					const expertElements = document.querySelectorAll(config.expert_price_selector);
+					const rows = table.querySelectorAll('tbody tr');
+					log(`تست ستون‌های ثابت: ${rows.length} ردیف یافت شد`, 'info');
 					
 					const results = {
 						sellable_quantity: {
-							selector: config.sellable_quantity_selector,
-							count: sellableElements.length,
+							selector: `td:nth-child(${FIXED_COLUMNS.sellable})`,
+							count: rows.length,
 							sampleValues: []
 						},
 						expert_price: {
-							selector: config.expert_price_selector,
-							count: expertElements.length,
+							selector: `td:nth-child(${FIXED_COLUMNS.expert})`,
+							count: rows.length,
 							sampleValues: []
 						}
 					};
 					
-					// Get sample values
-					for (let i = 0; i < Math.min(5, sellableElements.length); i++) {
-						const text = sellableElements[i].innerText || sellableElements[i].textContent || '';
-						const number = parseFloat(text.replace(/[^\d.-]/g, ''));
-						results.sellable_quantity.sampleValues.push({
-							text: text.trim(),
-							number: number
-						});
+					// Get sample values from first 5 rows
+					for (let i = 0; i < Math.min(5, rows.length); i++) {
+						const row = rows[i];
+						
+						// Test sellable quantity column
+						const sellableCell = row.querySelector(`td:nth-child(${FIXED_COLUMNS.sellable})`);
+						if (sellableCell) {
+							const text = sellableCell.innerText || sellableCell.textContent || '';
+							const number = parseNumberLoose(text);
+							results.sellable_quantity.sampleValues.push({
+								text: text.trim(),
+								number: number
+							});
+						}
+						
+						// Test expert price column
+						const expertCell = row.querySelector(`td:nth-child(${FIXED_COLUMNS.expert})`);
+						if (expertCell) {
+							const text = expertCell.innerText || expertCell.textContent || '';
+							const number = parseNumberLoose(text);
+							results.expert_price.sampleValues.push({
+								text: text.trim(),
+								number: number
+							});
+						}
 					}
 					
-					for (let i = 0; i < Math.min(5, expertElements.length); i++) {
-						const text = expertElements[i].innerText || expertElements[i].textContent || '';
-						const number = parseFloat(text.replace(/[^\d.-]/g, ''));
-						results.expert_price.sampleValues.push({
-							text: text.trim(),
-							number: number
-						});
-					}
-					
-					log(`تست سلکتورها: sellable=${sellableElements.length}, expert=${expertElements.length}`, 'info');
+					log(`تست ستون‌های ثابت: ستون ${FIXED_COLUMNS.sellable} و ${FIXED_COLUMNS.expert}`, 'info');
 					
 					// ارسال نتایج به popup
 					try {
@@ -1191,7 +1488,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 					return sendResponse && sendResponse({ ok: true, data: results });
 					
 				} catch (error) {
-					log(`خطا در تست سلکتورها: ${error.message}`, 'error');
+					log(`خطا در تست ستون‌های ثابت: ${error.message}`, 'error');
 					return sendResponse && sendResponse({ ok: false, error: error.message });
 				}
 			}
@@ -1202,3 +1499,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	})();
 	return true; // keep channel open for async sendResponse
 });
+

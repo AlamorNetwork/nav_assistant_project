@@ -4,8 +4,10 @@ const API_BASE_URL = 'https://chabokan.irplatforme.ir';
 let fundSelector, statusDiv, startBtn, stopBtn, resetBtn, logBox, clearLogBtn;
 let confirmAdjustedBtn, showLastNotifBtn, adjustmentStatus, logoutBtn, closeTabsBtn;
 let loginScreen, mainInterface, loginBtn, loginUsername, loginPassword, loginStatus;
-let securityInfoContainer, selectedSecurityName, sellableQuantity, expertPrice;
+let securityInfoContainer, selectedSecurityName, sellableQuantity, expertPrice, selectedRowNumber;
 let refreshSecurityDataBtn, testSelectorsBtn;
+// Current security info elements (above logs)
+let currentSecurityInfoContainer, currentSecurityName, currentSellableQuantity, currentExpertPrice, currentRowNumber;
 
 // --- مدیریت لاگ ---
 function renderLogEntry(entry) {
@@ -473,36 +475,45 @@ async function loadSecurityInfo() {
         const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
         if (!activeFund) {
             hideSecurityInfo();
+            hideCurrentSecurityInfo();
             return;
         }
 
         const stored = await chrome.storage.local.get([
-            `selectedSecurity_${activeFund}`,
+            `selectedSecurityName_${activeFund}`,
             `sellableQuantity_${activeFund}`,
-            `expertPrice_${activeFund}`
+            `expertPrice_${activeFund}`,
+            `rowNumber_${activeFund}`
         ]);
 
-        const securityName = stored[`selectedSecurity_${activeFund}`];
+        const securityName = stored[`selectedSecurityName_${activeFund}`];
         const sellableQty = stored[`sellableQuantity_${activeFund}`];
         const expertPriceValue = stored[`expertPrice_${activeFund}`];
+        const rowNumber = stored[`rowNumber_${activeFund}`];
 
         if (securityName) {
-            showSecurityInfo(securityName, sellableQty, expertPriceValue);
+            showSecurityInfo(securityName, sellableQty, expertPriceValue, rowNumber);
+            showCurrentSecurityInfo(securityName, sellableQty, expertPriceValue, rowNumber);
         } else {
             hideSecurityInfo();
+            hideCurrentSecurityInfo();
         }
     } catch (error) {
         addLog(`خطا در بارگذاری اطلاعات اوراق: ${error.message}`, 'error');
         hideSecurityInfo();
+        hideCurrentSecurityInfo();
     }
 }
 
-function showSecurityInfo(securityName, sellableQty, expertPriceValue) {
+function showSecurityInfo(securityName, sellableQty, expertPriceValue, rowNumber) {
     if (!securityInfoContainer || !selectedSecurityName || !sellableQuantity || !expertPrice) return;
 
     selectedSecurityName.textContent = securityName || '-';
-    sellableQuantity.textContent = sellableQty !== undefined ? sellableQty.toLocaleString() : '-';
-    expertPrice.textContent = expertPriceValue !== undefined ? expertPriceValue.toLocaleString() : '-';
+    sellableQuantity.textContent = (sellableQty !== undefined && sellableQty !== null) ? sellableQty.toLocaleString() : '-';
+    expertPrice.textContent = (expertPriceValue !== undefined && expertPriceValue !== null) ? expertPriceValue.toLocaleString() : '-';
+    if (selectedRowNumber) {
+        selectedRowNumber.textContent = rowNumber || '-';
+    }
 
     securityInfoContainer.style.display = 'block';
 }
@@ -510,6 +521,26 @@ function showSecurityInfo(securityName, sellableQty, expertPriceValue) {
 function hideSecurityInfo() {
     if (securityInfoContainer) {
         securityInfoContainer.style.display = 'none';
+    }
+}
+
+// توابع مدیریت اطلاعات اوراق فعلی (بالای لاگ‌ها)
+function showCurrentSecurityInfo(securityName, sellableQty, expertPriceValue, rowNumber) {
+    if (!currentSecurityInfoContainer || !currentSecurityName || !currentSellableQuantity || !currentExpertPrice) return;
+
+    currentSecurityName.textContent = securityName || '-';
+    currentSellableQuantity.textContent = (sellableQty !== undefined && sellableQty !== null) ? sellableQty.toLocaleString() : '-';
+    currentExpertPrice.textContent = (expertPriceValue !== undefined && expertPriceValue !== null) ? expertPriceValue.toLocaleString() : '-';
+    if (currentRowNumber) {
+        currentRowNumber.textContent = rowNumber || '-';
+    }
+
+    currentSecurityInfoContainer.style.display = 'block';
+}
+
+function hideCurrentSecurityInfo() {
+    if (currentSecurityInfoContainer) {
+        currentSecurityInfoContainer.style.display = 'none';
     }
 }
 
@@ -543,9 +574,10 @@ async function refreshSecurityData() {
         });
 
         if (response && response.ok && response.data) {
-            const { securityName, sellableQuantity, expertPrice } = response.data;
-            showSecurityInfo(securityName, sellableQuantity, expertPrice);
-            addLog(`اطلاعات بروزرسانی شد: ${securityName}`, 'success');
+            const { securityName, sellableQuantity, expertPrice, rowNumber } = response.data;
+            showSecurityInfo(securityName, sellableQuantity, expertPrice, rowNumber);
+            showCurrentSecurityInfo(securityName, sellableQuantity, expertPrice, rowNumber);
+            addLog(`اطلاعات بروزرسانی شد: ${securityName} (ردیف ${rowNumber})`, 'success');
         } else {
             addLog('خطا در بروزرسانی اطلاعات', 'error');
         }
@@ -597,7 +629,7 @@ async function testSelectors() {
                 addLog(`  نمونه مقادیر قیمت: ${expert_price.sampleValues.map(v => `${v.text}(${v.number})`).join(', ')}`, 'info');
             }
         } else {
-            addLog('خطا در تست سلکتورها', 'error');
+            addLog(`خطا در تست سلکتورها: ${response?.error || 'پاسخ نامعتبر از سرور'}`, 'error');
         }
 
     } catch (error) {
@@ -625,8 +657,16 @@ function initializeDOMElements() {
     selectedSecurityName = document.getElementById('selectedSecurityName');
     sellableQuantity = document.getElementById('sellableQuantity');
     expertPrice = document.getElementById('expertPrice');
+    selectedRowNumber = document.getElementById('selectedRowNumber');
     refreshSecurityDataBtn = document.getElementById('refreshSecurityDataBtn');
     testSelectorsBtn = document.getElementById('testSelectorsBtn');
+    
+    // Current security info elements (above logs)
+    currentSecurityInfoContainer = document.getElementById('currentSecurityInfoContainer');
+    currentSecurityName = document.getElementById('currentSecurityName');
+    currentSellableQuantity = document.getElementById('currentSellableQuantity');
+    currentExpertPrice = document.getElementById('currentExpertPrice');
+    currentRowNumber = document.getElementById('currentRowNumber');
     
     // Login elements
     loginScreen = document.getElementById('loginScreen');
@@ -658,9 +698,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.tabs.create({ url: request.url, active: true });
     } else if (request.type === 'SECURITY_DATA_UPDATED') {
         // Handle security data update from content script
-        const { securityName, sellableQuantity, expertPrice } = request.data;
-        showSecurityInfo(securityName, sellableQuantity, expertPrice);
-        addLog(`اطلاعات اوراق بروزرسانی شد: ${securityName}`, 'success');
+        const { securityName, sellableQuantity, expertPrice, rowNumber } = request.data;
+        showSecurityInfo(securityName, sellableQuantity, expertPrice, rowNumber);
+        showCurrentSecurityInfo(securityName, sellableQuantity, expertPrice, rowNumber);
+        addLog(`اطلاعات اوراق بروزرسانی شد: ${securityName} (ردیف ${rowNumber})`, 'success');
     } else if (request.type === 'SELECTOR_TEST_RESULTS') {
         // Handle selector test results from content script
         const { sellable_quantity, expert_price } = request.data;

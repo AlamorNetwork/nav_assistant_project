@@ -196,10 +196,10 @@ def save_configuration(config: Configuration, user=Depends(authenticate)):
     existing_config = fetchone("SELECT id FROM configurations WHERE fund_id = %s", (fund_id,))
     if existing_config:
         execute("""UPDATE configurations SET tolerance=%s, nav_page_url=%s, expert_price_page_url=%s, date_selector=%s, time_selector=%s, nav_price_selector=%s, total_units_selector=%s, nav_search_button_selector=%s, securities_list_selector=%s, sellable_quantity_selector=%s, expert_price_selector=%s, increase_rows_selector=%s, expert_search_button_selector=%s WHERE fund_id = %s""",
-                (config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector, fund_id))
+                     (config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector, fund_id))
     else:
         execute("""INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (fund_id, config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector))
+                     (fund_id, config.tolerance, config.nav_page_url, config.expert_price_page_url, config.date_selector, config.time_selector, config.nav_price_selector, config.total_units_selector, config.nav_search_button_selector, config.securities_list_selector, config.sellable_quantity_selector, config.expert_price_selector, config.increase_rows_selector, config.expert_search_button_selector))
     return {"status": "success", "message": f"Configuration for '{config.fund_name}' saved."}
 
 @app.get("/configurations/{fund_name}")
@@ -259,7 +259,7 @@ async def check_nav_logic(data: CheckData):
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     execute("""INSERT INTO logs (fund_id, timestamp, nav_on_page, total_units, sellable_quantity, expert_price, board_price, suggested_price, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (fund_id, timestamp, data.nav_on_page, data.total_units, data.sellable_quantity, data.expert_price, board_price, suggested_price, status_message))
+                 (fund_id, timestamp, data.nav_on_page, data.total_units, data.sellable_quantity, data.expert_price, board_price, suggested_price, status_message))
     
     print(f"[check-nav] suggested_nav={suggested_price:.2f} status={status_message}")
     return {
@@ -335,3 +335,29 @@ def apply_template_to_fund(fund_name: str, template_name: str, user=Depends(auth
         execute("INSERT INTO configurations (fund_id, tolerance, nav_page_url, expert_price_page_url, date_selector, time_selector, nav_price_selector, total_units_selector, nav_search_button_selector, securities_list_selector, sellable_quantity_selector, expert_price_selector, increase_rows_selector, expert_search_button_selector) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (fund['id'], tmpl['tolerance'], tmpl['nav_page_url'], tmpl['expert_price_page_url'], tmpl['date_selector'], tmpl['time_selector'], tmpl['nav_price_selector'], tmpl['total_units_selector'], tmpl['nav_search_button_selector'], tmpl['securities_list_selector'], tmpl['sellable_quantity_selector'], tmpl['expert_price_selector'], tmpl['increase_rows_selector'], tmpl['expert_search_button_selector']))
     return {"status": "success"}
+
+@app.post("/admin/reset-database")
+def reset_database(user=Depends(authenticate)):
+    if user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail="Only admin can reset database")
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Drop and recreate public schema
+        cur.execute("DROP SCHEMA public CASCADE")
+        cur.execute("CREATE SCHEMA public")
+        cur.execute("GRANT ALL ON SCHEMA public TO postgres")
+        cur.execute("GRANT ALL ON SCHEMA public TO public")
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        # Recreate tables
+        import subprocess
+        subprocess.run(["python", "database_setup.py"], check=True)
+        
+        return {"status": "success", "message": "Database reset successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database reset failed: {str(e)}")

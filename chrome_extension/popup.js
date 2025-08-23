@@ -27,7 +27,7 @@ async function addLog(message, type = 'info') {
 async function clearLogs() {
     if (logBox) {
         logBox.innerHTML = '';
-        await new Promise(resolve => chrome.storage.local.set({ nav_logs: [] }, resolve));
+        await new Promise(resolve => chrome.storage.local.set({ nav_logs: [], last_notification: null }, resolve));
         addLog('لاگ‌ها پاک شدند.');
     }
 }
@@ -363,7 +363,7 @@ async function setActiveFund() {
             }
             await chrome.storage.local.set(toStore);
             
-            updateStatus(`ربات برای صندوق ${selectedFund} فعال شد و صفحه NAV باز شد.`, 'success');
+            updateStatus(`ربات برای صندوق ${selectedFund} فعال شد. تب‌های NAV و Expert باز شدند.`, 'success');
             addLog(`NAV tab: ${navTabResponse.tabId}${expertTabResponse && expertTabResponse.tabId ? `, Expert tab: ${expertTabResponse.tabId}` : ''}`, 'success');
         } else {
             throw new Error('خطا در باز کردن تب جدید');

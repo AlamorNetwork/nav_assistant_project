@@ -2,12 +2,21 @@ import os
 import psycopg2
 
 # This script initializes PostgreSQL schema using DB_URL env
-DB_URL = os.getenv('DB_URL')
+DB_URL = os.getenv('DB_URL', "postgresql://postgres:NgkHDf7BA2PWt5eT@services.irn9.chabokan.net:17021/helen")
 if not DB_URL:
     raise SystemExit("DB_URL is not set. Example: postgresql://user:pass@host:5432/dbname")
 
 conn = psycopg2.connect(DB_URL)
 cur = conn.cursor()
+
+# --- Drop and recreate schema ---
+print("🗑️ Dropping existing schema...")
+cur.execute("DROP SCHEMA public CASCADE")
+cur.execute("CREATE SCHEMA public")
+cur.execute("GRANT ALL ON SCHEMA public TO postgres")
+cur.execute("GRANT ALL ON SCHEMA public TO public")
+conn.commit()
+print("✅ Schema reset completed")
 
 # --- Tables ---
 cur.execute("""

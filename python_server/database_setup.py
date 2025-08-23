@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS funds (
     name VARCHAR(255) UNIQUE NOT NULL,
     api_symbol VARCHAR(255) NOT NULL,
     type VARCHAR(64) DEFAULT 'rayan',
+    nav_page_url TEXT,
+    expert_price_page_url TEXT,
     owner_user_id INTEGER REFERENCES users(id)
 );
 """)

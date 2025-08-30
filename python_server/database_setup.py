@@ -97,6 +97,25 @@ CREATE TABLE IF NOT EXISTS templates (
 """)
 
 cur.execute("""
+CREATE TABLE IF NOT EXISTS templates (
+    name VARCHAR(255) PRIMARY KEY,
+    tolerance DOUBLE PRECISION DEFAULT 4.0,
+    nav_page_url TEXT,
+    expert_price_page_url TEXT,
+    date_selector TEXT,
+    time_selector TEXT,
+    nav_price_selector TEXT,
+    total_units_selector TEXT,
+    nav_search_button_selector TEXT,
+    securities_list_selector TEXT,
+    sellable_quantity_selector TEXT,
+    expert_price_selector TEXT,
+    increase_rows_selector TEXT,
+    expert_search_button_selector TEXT
+);
+""")
+
+cur.execute("""
 CREATE TABLE IF NOT EXISTS user_funds (
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     fund_id INTEGER REFERENCES funds(id) ON DELETE CASCADE,

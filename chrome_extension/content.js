@@ -8,6 +8,27 @@ let activeFunds = []; // Array of active funds for this user
 // --- Helper Functions ---
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Desktop notification helper
+async function showDesktopNotification(options) {
+    try {
+        const response = await chrome.runtime.sendMessage({
+            type: 'SHOW_DESKTOP_NOTIFICATION',
+            options: options
+        });
+        
+        if (response && response.ok) {
+            log(`نوتیفیکیشن دسکتاپ نمایش داده شد: ${response.notificationId}`, 'success');
+            return response.notificationId;
+        } else {
+            log(`خطا در نمایش نوتیفیکیشن دسکتاپ: ${response?.error || 'نامشخص'}`, 'warn');
+            return null;
+        }
+    } catch (error) {
+        log(`خطا در ارسال درخواست نوتیفیکیشن: ${error.message}`, 'error');
+        return null;
+    }
+}
+
 // Wait until the number of matched elements stabilizes (no change for a few cycles)
 async function waitForListStabilize(selector, { stableCycles = 3, intervalMs = 400, maxTries = 40 } = {}) {
 	try {
@@ -72,17 +93,7 @@ async function processExpertData(fund, config, sellableQuantity, expertPrice, lo
              [`expertPrice_${fund.name}`]: expertPrice
          });
          
-         // 6.5) مقایسه شماره ردیف برای دیباگ
-         const actualRowNumber = await chrome.storage.local.get(`actualRowNumber_${fund.name}`);
-         if (actualRowNumber[`actualRowNumber_${fund.name}`]) {
-             log(`🔍 مقایسه ردیف: انتخاب شده=${actualRowNumber[`actualRowNumber_${fund.name}`]}, خوانده شده=${values.rowNumber}`, 'info');
-             
-             // اگر شماره ردیف‌ها متفاوت بود، از شماره ردیف واقعی استفاده کن
-             if (actualRowNumber[`actualRowNumber_${fund.name}`] !== values.rowNumber) {
-                 log(`⚠️ شماره ردیف متفاوت! استفاده از شماره ردیف واقعی: ${actualRowNumber[`actualRowNumber_${fund.name}`]}`, 'warn');
-                 values.rowNumber = actualRowNumber[`actualRowNumber_${fund.name}`];
-             }
-         }
+         // Note: Row number comparison moved to after values are read
         
         // 7) ارسال پیام به popup برای بروزرسانی اطلاعات
         try {
@@ -101,6 +112,7 @@ async function processExpertData(fund, config, sellableQuantity, expertPrice, lo
             // Ignore errors if popup is not open
         }
         
+        // Show in-page notification
         await showNotification({
             title: `🚨 نیاز به تعدیل NAV - ${fund.name}`,
             message: suggested !== null ? `قیمت پیشنهادی جدید: ${suggested}` : (finalResult?.message || ''),
@@ -119,6 +131,19 @@ async function processExpertData(fund, config, sellableQuantity, expertPrice, lo
                         await chrome.runtime.sendMessage({ type: 'ACTIVATE_TAB', tabId: navTabId });
                     }
                 }
+            ]
+        });
+        
+        // Also show desktop notification
+        await showDesktopNotification({
+            id: `nav_adjustment_${fund.name}_${Date.now()}`,
+            title: '🚨 نیاز به تعدیل NAV!',
+            message: `صندوق ${fund.name}: ${suggested !== null ? `قیمت پیشنهادی ${suggested}` : 'نیاز به بررسی'}`,
+            priority: 2,
+            requireInteraction: true,
+            buttons: [
+                { text: 'تعدیل زدم، دوباره چک کن' },
+                { text: 'بستن' }
             ]
         });
     } catch (e) {
@@ -446,8 +471,9 @@ async function performCheck() {
     
     // Fetch user's funds
     try {
+        const headers = authToken ? { 'token': authToken } : {};
         const response = await fetch(`${API_BASE_URL}/funds`, {
-            headers: { 'token': authToken }
+            headers: headers
         });
         if (!response.ok) {
             log("خطا در دریافت لیست صندوق‌ها", 'error');
@@ -479,8 +505,9 @@ async function checkSingleFund(fund) {
     let config;
     try {
         const { authToken } = await chrome.storage.sync.get('authToken');
+        const headers = authToken ? { 'token': authToken } : {};
         const response = await fetch(`${API_BASE_URL}/configurations/${fund.name}`, {
-            headers: { 'token': authToken }
+            headers: headers
         });
         if (!response.ok) {
             log(`تنظیمات صندوق ${fund.name} یافت نشد.`, 'warn');
@@ -727,6 +754,7 @@ async function checkSingleFund(fund) {
                             try { await fetch(`${API_BASE_URL}/alerts/stale`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fund_name: fund.name, last_nav_time: `${dateText} ${timeText}`.trim(), age_seconds: ageSeconds }) }); } catch {}
                             await chrome.storage.local.set({ last_stale_alert_ts: nowTs });
                         }
+                        // Show in-page notification
                         await showNotification({
                             title: `🚨 تاخیر در NAV لحظه‌ای - ${fund.name}`,
                             message: `بروزرسانی NAV بیش از 2 دقیقه تاخیر دارد (${ageSeconds}s).`,
@@ -734,6 +762,19 @@ async function checkSingleFund(fund) {
                             persistent: true,
                             buttons: [
                                 { id: 'recheck-btn', text: 'رفرش و چک مجدد', callback: () => { location.reload(); } }
+                            ]
+                        });
+                        
+                        // Also show desktop notification for stale NAV
+                        await showDesktopNotification({
+                            id: `nav_stale_${fund.name}_${Date.now()}`,
+                            title: '⏰ تاخیر در بروزرسانی NAV',
+                            message: `صندوق ${fund.name}: آخرین بروزرسانی ${Math.floor(ageSeconds/60)} دقیقه پیش`,
+                            priority: 1, // Lower priority than adjustment notifications
+                            requireInteraction: false,
+                            buttons: [
+                                { text: 'رفرش صفحه' },
+                                { text: 'بستن' }
                             ]
                         });
                     }
@@ -971,8 +1012,8 @@ async function checkSingleFund(fund) {
                log('استفاده از ستون‌های ثابت برای خواندن مقادیر', 'info');
                
                // دریافت شماره ردیف واقعی
-               const actualRowNumber = await chrome.storage.local.get(`actualRowNumber_${fund.name}`);
-               const targetRowNumber = actualRowNumber[`actualRowNumber_${fund.name}`];
+               const actualRowNumberData = await chrome.storage.local.get(`actualRowNumber_${fund.name}`);
+               const targetRowNumber = actualRowNumberData[`actualRowNumber_${fund.name}`] || null;
                
                const values = readValuesFromFixedColumns(selectedRow, targetRowNumber);
                let sellableQuantity = values.sellable;
@@ -1095,8 +1136,9 @@ async function shouldRunOnThisTab() {
     try {
         const authStored = await chrome.storage.sync.get('authToken');
         const token = authStored.authToken || '';
+        const headers = token ? { 'token': token } : {};
         const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
-            headers: { 'token': token }
+            headers: headers
         });
         
         if (!response.ok) {
@@ -1200,7 +1242,10 @@ window.addEventListener('NAV_ASSISTANT_SHOW_NOTIFICATION', async (e) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 	(async () => {
 		try {
-			if (!request || !request.type) return;
+			if (!request || !request.type) {
+				if (sendResponse) sendResponse({ ok: false, error: 'Invalid request' });
+				return;
+			}
 			if (request.type === 'RUN_EXPERT_REFRESH_AND_READ') {
 				const fundName = request.fund_name;
 				const cfg = request.config || {};
@@ -1273,6 +1318,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 								}
 							}
 						}
+					]
+				});
+				
+				// Also show desktop notification
+				await showDesktopNotification({
+					id: `nav_adjustment_${fundName}_${Date.now()}`,
+					title: '🚨 نیاز به تعدیل NAV!',
+					message: `صندوق ${fundName}: ${suggested !== null ? `قیمت پیشنهادی ${suggested}` : 'نیاز به بررسی'}`,
+					priority: 2,
+					requireInteraction: true,
+					buttons: [
+						{ text: 'تعدیل زدم، دوباره چک کن' },
+						{ text: 'بستن' }
 					]
 				});
 				return sendResponse && sendResponse({ ok: true, data });
@@ -1494,7 +1552,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			}
 		} catch (e) {
 			log(`Message handler error: ${e.message}`, 'error');
-			return sendResponse && sendResponse({ ok: false, error: e.message });
+			if (sendResponse) {
+				try {
+					sendResponse({ ok: false, error: e.message });
+				} catch (responseError) {
+					console.error('Error sending response:', responseError);
+				}
+			}
 		}
 	})();
 	return true; // keep channel open for async sendResponse

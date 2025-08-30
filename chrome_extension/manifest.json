@@ -6,13 +6,17 @@
   "permissions": [
     "storage",
     "tabs",
-    "scripting"
+    "scripting",
+    "notifications"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "host_permissions": [
-    "https://*.irplatforme.ir/*"
+    "https://*.irplatforme.ir/*",
+    "https://*.irbroker.com/*",
+    "https://*.tsetmc.com/*",
+    "https://cdn.tsetmc.com/*"
   ],
   "options_page": "options.html",
   "action": {

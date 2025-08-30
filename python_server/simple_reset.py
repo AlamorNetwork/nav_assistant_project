@@ -12,8 +12,8 @@ except ImportError:
     os.system("python -m pip install psycopg2-binary")
     import psycopg2
 
-# Database connection details
-DB_URL = "postgresql://postgres:NgkHDf7BA2PWt5eT@services.irn9.chabokan.net:17021/helen"
+# Database connection details  
+DB_URL = os.getenv('DB_URL', "postgresql://postgres:NgkHDf7BA2PWt5eT@services.irn9.chabokan.net:17021/helen")
 
 def reset_database():
     try:

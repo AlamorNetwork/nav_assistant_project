@@ -4,7 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 # Database connection details
-DB_URL = "postgresql://postgres:NgkHDf7BA2PWt5eT@services.irn9.chabokan.net:17021/helen"
+DB_URL = os.getenv('DB_URL', "postgresql://postgres:NgkHDf7BA2PWt5eT@services.irn9.chabokan.net:17021/helen")
 
 def reset_database():
     try:

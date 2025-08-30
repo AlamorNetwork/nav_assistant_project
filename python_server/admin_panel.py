@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
-import sqlite3, hashlib, secrets, json, os, urllib.parse
+import hashlib, secrets, json, os, urllib.parse
 import psycopg2, psycopg2.extras
 from datetime import datetime
 
@@ -61,50 +61,101 @@ async def admin_login_post(request: Request, username: str = Form(), password: s
 async def admin_dashboard(request: Request):
     try:
         authenticate_admin(request)
-    except HTTPException:
+    except HTTPException as e:
+        print(f"[admin] Authentication failed: {e}")
         return RedirectResponse(url="/", status_code=302)
-    # load data
-    conn = get_db_connection()
+    
+    # load data with detailed error handling
+    try:
+        conn = get_db_connection()
+        print("[admin] Database connection established")
+    except Exception as e:
+        print(f"[admin] Database connection failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
+    
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id, username, role, created_at FROM users ORDER BY username")
-            users = cur.fetchall()
-            cur.execute("SELECT id, name, type, api_symbol FROM funds ORDER BY name")
-            funds = cur.fetchall()
-            cur.execute("SELECT name, tolerance FROM templates ORDER BY name")
-            tmpls = cur.fetchall()
-            # if edit_template query provided, load that template
+            # Load users
+            try:
+                cur.execute("SELECT id, username, role, created_at FROM users ORDER BY username")
+                users = cur.fetchall()
+                print(f"[admin] Loaded {len(users)} users")
+            except Exception as e:
+                print(f"[admin] Error loading users: {e}")
+                users = []
+            
+            # Load funds
+            try:
+                cur.execute("SELECT id, name, type, api_symbol FROM funds ORDER BY name")
+                funds = cur.fetchall()
+                print(f"[admin] Loaded {len(funds)} funds")
+            except Exception as e:
+                print(f"[admin] Error loading funds: {e}")
+                funds = []
+            
+            # Load templates
+            try:
+                cur.execute("SELECT name, tolerance FROM templates ORDER BY name")
+                tmpls = cur.fetchall()
+                print(f"[admin] Loaded {len(tmpls)} templates")
+            except Exception as e:
+                print(f"[admin] Error loading templates: {e}")
+                tmpls = []
+            
+            # Load specific template if requested
             edit_name = request.query_params.get('edit_template')
             tpl = None
             if edit_name:
-                cur.execute("SELECT * FROM templates WHERE name=%s", (edit_name,))
-                tpl = cur.fetchone()
-            # user-fund mappings
-            cur.execute(
-                """
-                SELECT u.username, f.name AS fund_name
-                FROM user_funds uf
-                JOIN users u ON uf.user_id=u.id
-                JOIN funds f ON uf.fund_id=f.id
-                ORDER BY u.username, f.name
-                """
-            )
-            user_funds = cur.fetchall()
+                try:
+                    cur.execute("SELECT * FROM templates WHERE name=%s", (edit_name,))
+                    tpl = cur.fetchone()
+                    print(f"[admin] Loaded template: {edit_name}")
+                except Exception as e:
+                    print(f"[admin] Error loading template {edit_name}: {e}")
+            
+            # Load user-fund mappings
+            try:
+                cur.execute(
+                    """
+                    SELECT u.username, f.name AS fund_name
+                    FROM user_funds uf
+                    JOIN users u ON uf.user_id=u.id
+                    JOIN funds f ON uf.fund_id=f.id
+                    ORDER BY u.username, f.name
+                    """
+                )
+                user_funds = cur.fetchall()
+                print(f"[admin] Loaded {len(user_funds)} user-fund mappings")
+            except Exception as e:
+                print(f"[admin] Error loading user-fund mappings: {e}")
+                user_funds = []
+                
+    except Exception as e:
+        print(f"[admin] Error in database operations: {e}")
+        raise HTTPException(status_code=500, detail=f"Database operation failed: {str(e)}")
     finally:
         conn.close()
-    # Prepare JSON text for textarea to avoid template-side JSON filter issues
-    tpl_json = json.dumps(dict(tpl)) if tpl else ""
-    message = request.query_params.get('message')
-    return templates.TemplateResponse("admin_dashboard.html", {
-        "request": request,
-        "users": users,
-        "funds": funds,
-        "templates": tmpls,
-        "tpl": tpl,
-        "tpl_json": tpl_json,
-        "message": message,
-        "user_funds": user_funds
-    })
+        print("[admin] Database connection closed")
+    
+    # Prepare response data
+    try:
+        tpl_json = json.dumps(dict(tpl)) if tpl else ""
+        message = request.query_params.get('message')
+        
+        print("[admin] Rendering template")
+        return templates.TemplateResponse("admin_dashboard.html", {
+            "request": request,
+            "users": users,
+            "funds": funds,
+            "templates": tmpls,
+            "tpl": tpl,
+            "tpl_json": tpl_json,
+            "message": message,
+            "user_funds": user_funds
+        })
+    except Exception as e:
+        print(f"[admin] Error rendering template: {e}")
+        raise HTTPException(status_code=500, detail=f"Template rendering failed: {str(e)}")
 
 @app.post("/admin/create-user")
 async def create_user(request: Request, username: str = Form(), password: str = Form(), role: str = Form()):

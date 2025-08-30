@@ -5,9 +5,30 @@ let fundSelector, statusDiv, startBtn, stopBtn, resetBtn, logBox, clearLogBtn;
 let confirmAdjustedBtn, showLastNotifBtn, adjustmentStatus, logoutBtn, closeTabsBtn;
 let loginScreen, mainInterface, loginBtn, loginUsername, loginPassword, loginStatus;
 let securityInfoContainer, selectedSecurityName, sellableQuantity, expertPrice, selectedRowNumber;
-let refreshSecurityDataBtn, testSelectorsBtn;
+let refreshSecurityDataBtn, testSelectorsBtn, testNotificationBtn;
 // Current security info elements (above logs)
 let currentSecurityInfoContainer, currentSecurityName, currentSellableQuantity, currentExpertPrice, currentRowNumber;
+
+// --- نوتیفیکیشن دسکتاپ ---
+async function showDesktopNotification(options) {
+    try {
+        const response = await chrome.runtime.sendMessage({
+            type: 'SHOW_DESKTOP_NOTIFICATION',
+            options: options
+        });
+        
+        if (response && response.ok) {
+            addLog(`نوتیفیکیشن دسکتاپ نمایش داده شد: ${response.notificationId}`, 'success');
+            return response.notificationId;
+        } else {
+            addLog(`خطا در نمایش نوتیفیکیشن دسکتاپ: ${response?.error || 'نامشخص'}`, 'warn');
+            return null;
+        }
+    } catch (error) {
+        addLog(`خطا در ارسال درخواست نوتیفیکیشن: ${error.message}`, 'error');
+        return null;
+    }
+}
 
 // --- مدیریت لاگ ---
 function renderLogEntry(entry) {
@@ -86,12 +107,21 @@ async function checkAuth() {
             return true;
             
         } catch (e) {
-            // Network or transient error: keep user logged in
+            // Network or transient error: keep user logged in but log properly
             addLog(`Token validation error (keeping session): ${e.message}`, 'warn');
             await chrome.storage.local.set({ lastAuthCheck: now });
-            showMainInterface();
-            await fetchFunds(); // Load funds data
-            return true;
+            
+            // Only show main interface if we have valid auth data
+            if (stored.authToken && stored.authUser && stored.authUser.username) {
+                showMainInterface();
+                await fetchFunds(); // Load funds data
+                return true;
+            } else {
+                // Clear invalid auth data and show login
+                await chrome.storage.sync.remove(['authToken', 'authUser']);
+                showLoginScreen();
+                return false;
+            }
         }
     }
     
@@ -184,6 +214,15 @@ async function login() {
             loginStatus.style.color = 'var(--error-color)';
         }
         addLog(`Login error: ${e.message}`, 'error');
+        
+        // Show desktop notification for login failure
+        await showDesktopNotification({
+            id: `login_failed_${Date.now()}`,
+            title: '❌ خطا در ورود',
+            message: 'ورود ناموفق بود. لطفاً مجدداً تلاش کنید.',
+            priority: 1,
+            requireInteraction: false
+        });
     }
 }
 
@@ -369,6 +408,16 @@ async function setActiveFund() {
             
             updateStatus(`ربات برای صندوق ${selectedFund} فعال شد. تب‌های NAV و Expert باز شدند.`, 'success');
             addLog(`NAV tab: ${navTabResponse.tabId}${expertTabResponse && expertTabResponse.tabId ? `, Expert tab: ${expertTabResponse.tabId}` : ''}`, 'success');
+            
+            // Show desktop notification for successful activation
+            await showDesktopNotification({
+                id: `bot_activated_${selectedFund}_${Date.now()}`,
+                title: '✅ ربات فعال شد',
+                message: `نظارت صندوق ${selectedFund} شروع شد`,
+                priority: 1,
+                requireInteraction: false,
+                silent: true
+            });
         } else {
             throw new Error('خطا در باز کردن تب جدید');
         }
@@ -393,6 +442,16 @@ async function stopBot() {
         
         updateStatus('ربات با موفقیت خاموش شد و تب‌های مدیریت شده بسته شد.', 'neutral');
         addLog('ربات خاموش شد و تب‌های مدیریت شده بسته شد.', 'info');
+        
+        // Show desktop notification for bot stop
+        await showDesktopNotification({
+            id: `bot_stopped_${Date.now()}`,
+            title: '⏹️ ربات خاموش شد',
+            message: 'نظارت صندوق متوقف شد',
+            priority: 0,
+            requireInteraction: false,
+            silent: true
+        });
         
     } catch (error) {
         updateStatus(`خطا در خاموش کردن ربات: ${error.message}`, 'error');
@@ -637,6 +696,72 @@ async function testSelectors() {
     }
 }
 
+async function testNotifications() {
+    addLog('🧪 شروع تست نوتیفیکیشن‌های دسکتاپ...', 'info');
+    
+    try {
+        // Test 1: Basic notification
+        addLog('تست 1: نوتیفیکیشن ساده', 'info');
+        await showDesktopNotification({
+            id: 'test_basic',
+            title: '🧪 تست دستیار NAV',
+            message: 'این یک پیام تست ساده است',
+            priority: 1,
+            requireInteraction: false
+        });
+        
+        // Test 2: Adjustment notification with buttons (after 2 seconds)
+        setTimeout(async () => {
+            addLog('تست 2: نوتیفیکیشن تعدیل با دکمه‌ها', 'info');
+            await showDesktopNotification({
+                id: 'test_adjustment',
+                title: '🚨 تست تعدیل NAV',
+                message: 'صندوق تست: قیمت پیشنهادی 1250.75',
+                priority: 2,
+                requireInteraction: true,
+                buttons: [
+                    { text: 'تعدیل زدم، دوباره چک کن' },
+                    { text: 'بستن' }
+                ]
+            });
+        }, 2000);
+        
+        // Test 3: Stale NAV notification (after 4 seconds)
+        setTimeout(async () => {
+            addLog('تست 3: نوتیفیکیشن تاخیر NAV', 'info');
+            await showDesktopNotification({
+                id: 'test_stale',
+                title: '⏰ تست تاخیر NAV',
+                message: 'صندوق تست: آخرین بروزرسانی 5 دقیقه پیش',
+                priority: 1,
+                requireInteraction: false,
+                buttons: [
+                    { text: 'رفرش صفحه' },
+                    { text: 'بستن' }
+                ]
+            });
+        }, 4000);
+        
+        // Test 4: Silent notification (after 6 seconds)
+        setTimeout(async () => {
+            addLog('تست 4: نوتیفیکیشن بی‌صدا', 'info');
+            await showDesktopNotification({
+                id: 'test_silent',
+                title: '🔇 تست بی‌صدا',
+                message: 'این نوتیفیکیشن صدا ندارد',
+                priority: 0,
+                requireInteraction: false,
+                silent: true
+            });
+        }, 6000);
+        
+        addLog('✅ همه تست‌ها در صف قرار گرفتند! نوتیفیکیشن‌ها را در دسکتاپ چک کنید.', 'success');
+        
+    } catch (error) {
+        addLog(`خطا در تست نوتیفیکیشن‌ها: ${error.message}`, 'error');
+    }
+}
+
 // --- DOM Initialization ---
 function initializeDOMElements() {
     fundSelector = document.getElementById('fundSelector');
@@ -660,6 +785,7 @@ function initializeDOMElements() {
     selectedRowNumber = document.getElementById('selectedRowNumber');
     refreshSecurityDataBtn = document.getElementById('refreshSecurityDataBtn');
     testSelectorsBtn = document.getElementById('testSelectorsBtn');
+    testNotificationBtn = document.getElementById('testNotificationBtn');
     
     // Current security info elements (above logs)
     currentSecurityInfoContainer = document.getElementById('currentSecurityInfoContainer');
@@ -757,49 +883,54 @@ function setupEventListeners() {
     // Security info events
     if (refreshSecurityDataBtn) refreshSecurityDataBtn.addEventListener('click', refreshSecurityData);
     if (testSelectorsBtn) testSelectorsBtn.addEventListener('click', testSelectors);
-}
-
-// دکمه‌های وضعیت تعدیل
-if (confirmAdjustedBtn) {
-    confirmAdjustedBtn.addEventListener('click', async () => {
-        try {
-            const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
-            if (!activeFund) { addLog('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
-            const stored = await chrome.storage.sync.get('authToken');
-            const token = stored.authToken || '';
-            const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
-                headers: { 'token': token }
-            });
-            if (!response.ok) throw new Error('Could not get config for recheck.');
-            const config = await response.json();
-            const dueAt = Date.now() + 2 * 60 * 1000; // 2 minutes later
-            await new Promise(resolve => chrome.storage.local.set({ postAdjustmentActive: true, postAdjustmentCheckDueAt: dueAt }, resolve));
-            await new Promise(resolve => chrome.storage.local.remove(['last_notification', 'needsExpertData', 'navSearchClicked'], resolve));
-            if (adjustmentStatus) adjustmentStatus.textContent = '-';
-            chrome.tabs.create({ url: config.nav_page_url, active: true });
-            addLog('کاربر تایید کرد که تعدیل انجام شده. در حال چک مجدد...', 'success');
-        } catch (e) {
-            addLog(e.message || 'خطا در شروع بررسی مجدد.', 'error');
-        }
-    });
-}
-
-if (showLastNotifBtn) {
-    showLastNotifBtn.addEventListener('click', () => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            const tabId = tabs[0]?.id;
-            if (!tabId) return;
-            chrome.storage.local.get('last_notification', (data) => {
-                if (!data.last_notification) { addLog('اعلان ذخیره‌شده‌ای وجود ندارد.'); return; }
-                chrome.scripting.executeScript({
-                    target: { tabId },
-                    func: (opts) => {
-                        const ev = new CustomEvent('NAV_ASSISTANT_SHOW_NOTIFICATION', { detail: opts });
-                        window.dispatchEvent(ev);
-                    },
-                    args: [data.last_notification]
+    
+    // Test notification event
+    if (testNotificationBtn) testNotificationBtn.addEventListener('click', testNotifications);
+    
+    // Adjustment events
+    if (confirmAdjustedBtn) {
+        confirmAdjustedBtn.addEventListener('click', async () => {
+            try {
+                const { activeFund } = await new Promise(resolve => chrome.storage.sync.get('activeFund', resolve));
+                if (!activeFund) { addLog('ابتدا یک صندوق را فعال کنید.', 'error'); return; }
+                const stored = await chrome.storage.sync.get('authToken');
+                const token = stored.authToken || '';
+                const headers = token ? { 'token': token } : {};
+                const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
+                    headers: headers
+                });
+                if (!response.ok) throw new Error('Could not get config for recheck.');
+                const config = await response.json();
+                const dueAt = Date.now() + 2 * 60 * 1000; // 2 minutes later
+                await new Promise(resolve => chrome.storage.local.set({ postAdjustmentActive: true, postAdjustmentCheckDueAt: dueAt }, resolve));
+                await new Promise(resolve => chrome.storage.local.remove(['last_notification', 'needsExpertData', 'navSearchClicked'], resolve));
+                if (adjustmentStatus) adjustmentStatus.textContent = '-';
+                chrome.tabs.create({ url: config.nav_page_url, active: true });
+                addLog('کاربر تایید کرد که تعدیل انجام شده. در حال چک مجدد...', 'success');
+            } catch (e) {
+                addLog(e.message || 'خطا در شروع بررسی مجدد.', 'error');
+            }
+        });
+    }
+    
+    // Show notification events
+    if (showLastNotifBtn) {
+        showLastNotifBtn.addEventListener('click', () => {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                const tabId = tabs[0]?.id;
+                if (!tabId) return;
+                chrome.storage.local.get('last_notification', (data) => {
+                    if (!data.last_notification) { addLog('اعلان ذخیره‌شده‌ای وجود ندارد.'); return; }
+                    chrome.scripting.executeScript({
+                        target: { tabId },
+                        func: (opts) => {
+                            const ev = new CustomEvent('NAV_ASSISTANT_SHOW_NOTIFICATION', { detail: opts });
+                            window.dispatchEvent(ev);
+                        },
+                        args: [data.last_notification]
+                    });
                 });
             });
         });
-    });
+    }
 }

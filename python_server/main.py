@@ -3,6 +3,7 @@ import psycopg2
 import psycopg2.extras
 import httpx
 import telegram
+import subprocess
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -362,7 +363,6 @@ def reset_database(user=Depends(authenticate)):
         conn.close()
         
         # Recreate tables
-        import subprocess
         subprocess.run(["python", "database_setup.py"], check=True)
         
         return {"status": "success", "message": "Database reset successfully"}

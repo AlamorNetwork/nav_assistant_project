@@ -16,6 +16,12 @@ from config import get_db_url, get_telegram_config
 app = FastAPI(title="NAV Assistant API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "NAV Assistant API", "version": "1.0.0"}
+
 # --- Telegram Configuration ---
 # Use configuration module for better management
 telegram_config = get_telegram_config()

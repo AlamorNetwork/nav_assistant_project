@@ -1,0 +1,16 @@
+# NAV Checker Environment Configuration
+# Copy this file to .env and update with your database credentials
+
+# Database Configuration (separate from Codal project)
+DB_URL=postgresql://username:password@host:port/nav_checker_db
+
+# Telegram Bot Configuration (optional)
+BOT_TOKEN=your_telegram_bot_token_here
+ADMIN_CHAT_ID=your_admin_chat_id_here
+
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8001
+
+# Security
+SECRET_KEY=your_secret_key_here

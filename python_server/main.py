@@ -10,15 +10,17 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import hashlib, secrets
+from config import get_db_url, get_telegram_config
 
 # --- App Setup ---
 app = FastAPI(title="NAV Assistant API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # --- Telegram Configuration ---
-# Read credentials from environment to avoid hardcoding placeholders
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "")
+# Use configuration module for better management
+telegram_config = get_telegram_config()
+BOT_TOKEN = telegram_config['bot_token']
+ADMIN_CHAT_ID = telegram_config['admin_chat_id']
 
 async def send_telegram_alert(message: str):
     if not BOT_TOKEN or not ADMIN_CHAT_ID:
@@ -51,12 +53,12 @@ async def get_board_price(fund_name: str) -> float:
             return 0.0
 
 # --- DB (PostgreSQL) Connection & helpers ---
-DB_URL = os.getenv("DB_URL")  # e.g., postgresql://user:pass@host:5432/dbname
-
+# Use configuration module for database connection
 def get_db_connection():
-    if not DB_URL:
-        raise RuntimeError("DB_URL environment variable is not set for PostgreSQL connection")
-    return psycopg2.connect(DB_URL)
+    db_url = get_db_url()
+    if not db_url:
+        raise RuntimeError("Database URL is not configured")
+    return psycopg2.connect(db_url)
 
 def fetchone(sql: str, params: tuple = ()):
     conn = get_db_connection()

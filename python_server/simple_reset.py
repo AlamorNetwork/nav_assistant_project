@@ -13,7 +13,7 @@ except ImportError:
     import psycopg2
 
 # Database connection details  
-DB_URL = os.getenv('DB_URL', "postgresql://postgres:NgkHDf7BA2PWt5eT@services.irn9.chabokan.net:17021/helen")
+DB_URL = os.getenv('DB_URL', "postgresql://postgres:eOx5S0h4RFqejEGl@services.irn13.chabokan.net:50895/micheal")
 
 def reset_database():
     try:

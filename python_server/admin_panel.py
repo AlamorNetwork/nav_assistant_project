@@ -4,18 +4,23 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import hashlib, secrets, json, os, urllib.parse
 import psycopg2, psycopg2.extras
 from datetime import datetime
+from config import get_db_url
 
 app = FastAPI(title="سبدگردان کاریزما - Admin Panel")
 
 templates = Jinja2Templates(directory="templates")
 
-# DB
-DB_URL = os.getenv('DB_URL')
-
+# DB - Use centralized configuration with fallback
 def get_db_connection():
-    if not DB_URL:
-        raise RuntimeError('DB_URL is not set')
-    conn = psycopg2.connect(DB_URL)
+    try:
+        db_url = get_db_url()
+    except:
+        # Fallback to direct connection if config module fails
+        db_url = os.getenv('DB_URL', 'postgresql://postgres:eOx5S0h4RFqejEGl@services.irn13.chabokan.net:50895/micheal')
+    
+    if not db_url:
+        raise RuntimeError('Database URL is not configured')
+    conn = psycopg2.connect(db_url)
     return conn
 
 def hash_password(password: str) -> str:

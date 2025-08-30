@@ -67,13 +67,17 @@
         <button type="submit">افزودن</button>
       </form>
       <table>
-        <thead><tr><th>نام</th><th>نوع</th><th>شناسه</th></tr></thead>
+        <thead><tr><th>نام</th><th>نوع</th><th>شناسه</th><th>عملیات</th></tr></thead>
         <tbody>
           {% for f in funds %}
           <tr>
             <td>{{ f['name'] }}</td>
             <td>{{ f['type'] }}</td>
             <td class="muted">{{ f['api_symbol'] }}</td>
+            <td>
+              <button onclick="editFund({{ f['id'] }}, '{{ f['name'] }}', '{{ f['api_symbol'] }}', '{{ f['nav_page_url'] }}', '{{ f['expert_price_page_url'] }}', '{{ f['type'] }}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; margin: 2px; border-radius: 3px; cursor: pointer;">ویرایش</button>
+              <button onclick="deleteFund({{ f['id'] }}, '{{ f['name'] }}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; margin: 2px; border-radius: 3px; cursor: pointer;">حذف</button>
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -154,5 +158,87 @@
       </table>
     </div>
   </div>
+
+  <!-- Edit Fund Modal -->
+  <div id="editModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="position: relative; top: 10%; margin: auto; background: white; padding: 20px; width: 80%; max-width: 600px; border-radius: 8px;">
+      <h3>ویرایش صندوق</h3>
+      <form id="editForm" action="/admin/edit-fund" method="post">
+        <input type="hidden" id="editFundId" name="fund_id">
+        <div class="row">
+          <input class="col" type="text" id="editName" name="name" placeholder="نام صندوق" required>
+          <input class="col" type="text" id="editApiSymbol" name="api_symbol" placeholder="شناسه API" required>
+        </div>
+        <div class="row">
+          <input class="col" type="url" id="editNavUrl" name="nav_page_url" placeholder="nav_page_url" required>
+        </div>
+        <div class="row">
+          <input class="col" type="url" id="editExpertUrl" name="expert_price_page_url" placeholder="expert_price_page_url" required>
+        </div>
+        <div class="row">
+          <select class="col" id="editType" name="type">
+            <option value="rayan">رایان هم‌افزار</option>
+            <option value="tadbir">تدبیر رایان پرداز</option>
+          </select>
+        </div>
+        <div class="row" style="margin-top: 20px;">
+          <button type="submit" style="background: #28a745; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">ذخیره تغییرات</button>
+          <button type="button" onclick="closeEditModal()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">انصراف</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Fund Modal -->
+  <div id="deleteModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="position: relative; top: 20%; margin: auto; background: white; padding: 20px; width: 400px; border-radius: 8px; text-align: center;">
+      <h3>تأیید حذف</h3>
+      <p>آیا مطمئن هستید که می‌خواهید صندوق "<span id="deleteFundName"></span>" را حذف کنید؟</p>
+      <p style="color: #dc3545; font-size: 14px;">⚠️ این عمل غیرقابل بازگشت است و تمام کانفیگوریشن‌ها و تخصیص‌های مربوط به این صندوق حذف خواهد شد.</p>
+      <form id="deleteForm" action="/admin/delete-fund" method="post" style="margin-top: 20px;">
+        <input type="hidden" id="deleteFundId" name="fund_id">
+        <button type="submit" style="background: #dc3545; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">بله، حذف کن</button>
+        <button type="button" onclick="closeDeleteModal()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">انصراف</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function editFund(id, name, apiSymbol, navUrl, expertUrl, type) {
+      document.getElementById('editFundId').value = id;
+      document.getElementById('editName').value = name;
+      document.getElementById('editApiSymbol').value = apiSymbol;
+      document.getElementById('editNavUrl').value = navUrl;
+      document.getElementById('editExpertUrl').value = expertUrl;
+      document.getElementById('editType').value = type;
+      document.getElementById('editModal').style.display = 'block';
+    }
+
+    function closeEditModal() {
+      document.getElementById('editModal').style.display = 'none';
+    }
+
+    function deleteFund(id, name) {
+      document.getElementById('deleteFundId').value = id;
+      document.getElementById('deleteFundName').textContent = name;
+      document.getElementById('deleteModal').style.display = 'block';
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteModal').style.display = 'none';
+    }
+
+    // Close modals when clicking outside
+    window.onclick = function(event) {
+      const editModal = document.getElementById('editModal');
+      const deleteModal = document.getElementById('deleteModal');
+      if (event.target === editModal) {
+        closeEditModal();
+      }
+      if (event.target === deleteModal) {
+        closeDeleteModal();
+      }
+    }
+  </script>
 </body>
 </html>

@@ -91,7 +91,7 @@ async def admin_dashboard(request: Request):
             
             # Load funds
             try:
-                cur.execute("SELECT id, name, type, api_symbol FROM funds ORDER BY name")
+                cur.execute("SELECT id, name, type, api_symbol, nav_page_url, expert_price_page_url FROM funds ORDER BY name")
                 funds = cur.fetchall()
                 print(f"[admin] Loaded {len(funds)} funds")
             except Exception as e:
@@ -363,6 +363,55 @@ async def unassign_fund(request: Request, username: str = Form(), fund_name: str
     finally:
         conn.close()
     return RedirectResponse(url="/admin?message=Unassigned", status_code=302)
+
+@app.post("/admin/edit-fund")
+async def edit_fund(request: Request, fund_id: int = Form(), name: str = Form(), api_symbol: str = Form(), nav_page_url: str = Form(), expert_price_page_url: str = Form(), type: str = Form()):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        return RedirectResponse(url="/", status_code=302)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE funds 
+                SET name=%s, api_symbol=%s, type=%s, nav_page_url=%s, expert_price_page_url=%s 
+                WHERE id=%s
+            """, (name, api_symbol, type, nav_page_url, expert_price_page_url, fund_id))
+            conn.commit()
+            message = "Fund updated successfully"
+    except psycopg2.Error as e:
+        err = getattr(e, 'pgerror', None) or str(e)
+        message = f"DB error: {err[:160]}"
+    finally:
+        conn.close()
+    return RedirectResponse(url=f"/admin?message={message}", status_code=302)
+
+@app.post("/admin/delete-fund")
+async def delete_fund(request: Request, fund_id: int = Form()):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        return RedirectResponse(url="/", status_code=302)
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # Get fund name for confirmation
+            cur.execute("SELECT name FROM funds WHERE id=%s", (fund_id,))
+            fund = cur.fetchone()
+            if not fund:
+                return RedirectResponse(url="/admin?message=Fund not found", status_code=302)
+            
+            # Delete fund (cascading deletes will handle configurations and user_funds)
+            cur.execute("DELETE FROM funds WHERE id=%s", (fund_id,))
+            conn.commit()
+            message = f"Fund '{fund[0]}' deleted successfully"
+    except psycopg2.Error as e:
+        err = getattr(e, 'pgerror', None) or str(e)
+        message = f"Delete error: {err[:160]}"
+    finally:
+        conn.close()
+    return RedirectResponse(url=f"/admin?message={message}", status_code=302)
 
 if __name__ == "__main__":
     import uvicorn

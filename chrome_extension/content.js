@@ -653,12 +653,62 @@ async function checkSingleFund(fund) {
         } catch {}
         if (!localState[`navSearchClicked_${fund.name}`]) {
             log(`در صفحه NAV برای ${fund.name}. وضعیت: کلیک روی دکمه جستجو.`);
+            
+            // Check if selector is defined
+            if (!config.nav_search_button_selector) {
+                log(`nav_search_button_selector برای ${fund.name} تعریف نشده است. لطفاً کانفیگ را بررسی کنید.`, 'error');
+                return;
+            }
+            
             const searchButton = document.querySelector(config.nav_search_button_selector);
             if (searchButton) {
+                log(`دکمه جستجو یافت شد، کلیک می‌کنم: ${config.nav_search_button_selector}`);
                 await chrome.storage.local.set({ [`navSearchClicked_${fund.name}`]: true });
-                searchButton.click();
+                
+                // Try multiple click methods
+                try {
+                    searchButton.click();
+                    log(`کلیک اول انجام شد`);
+                } catch (e) {
+                    log(`خطا در کلیک اول: ${e.message}`, 'warn');
+                }
+                
+                // Backup click methods
+                try {
+                    searchButton.dispatchEvent(new MouseEvent('click', { 
+                        bubbles: true, 
+                        cancelable: true, 
+                        view: window 
+                    }));
+                    log(`کلیک دوم (MouseEvent) انجام شد`);
+                } catch (e) {
+                    log(`خطا در کلیک دوم: ${e.message}`, 'warn');
+                }
+                
+                // Try form submission if button is in a form
+                try {
+                    const form = searchButton.closest('form');
+                    if (form && form.requestSubmit) {
+                        form.requestSubmit();
+                        log(`فرم submit شد`);
+                    }
+                } catch (e) {
+                    log(`خطا در submit فرم: ${e.message}`, 'warn');
+                }
+                
             } else {
-                log(`دکمه جستجوی صفحه NAV برای ${fund.name} یافت نشد.`, 'error');
+                log(`دکمه جستجوی صفحه NAV برای ${fund.name} با selector "${config.nav_search_button_selector}" یافت نشد.`, 'error');
+                log(`لطفاً selector را در admin panel بررسی کنید.`, 'error');
+                
+                // Debug: Show all buttons on page
+                const allButtons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+                log(`دکمه‌های موجود در صفحه (${allButtons.length}):`);
+                allButtons.forEach((btn, i) => {
+                    const text = (btn.innerText || btn.value || btn.getAttribute('title') || '').trim();
+                    const id = btn.id || '';
+                    const className = btn.className || '';
+                    log(`  ${i+1}. text="${text}" id="${id}" class="${className}"`);
+                });
             }
         } else {
             log(`در صفحه NAV برای ${fund.name}. وضعیت: خواندن داده‌ها پس از جستجو.`);

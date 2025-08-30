@@ -413,6 +413,127 @@ async def delete_fund(request: Request, fund_id: int = Form()):
         conn.close()
     return RedirectResponse(url=f"/admin?message={message}", status_code=302)
 
+@app.post("/admin/edit-template")
+async def edit_template(request: Request, template_name: str = Form(), template_data: str = Form()):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        return RedirectResponse(url="/", status_code=302)
+    
+    try:
+        # Parse JSON data
+        data = json.loads(template_data)
+        
+        conn = get_db_connection()
+        try:
+            with conn.cursor() as cur:
+                # Check if template exists
+                cur.execute("SELECT name FROM templates WHERE name = %s", (template_name,))
+                if not cur.fetchone():
+                    return RedirectResponse(url="/admin?message=Template not found", status_code=302)
+                
+                # Update template
+                cur.execute("""
+                    UPDATE templates SET 
+                        tolerance = %s,
+                        nav_page_url = %s,
+                        expert_price_page_url = %s,
+                        date_selector = %s,
+                        time_selector = %s,
+                        nav_price_selector = %s,
+                        total_units_selector = %s,
+                        nav_search_button_selector = %s,
+                        securities_list_selector = %s,
+                        sellable_quantity_selector = %s,
+                        expert_price_selector = %s,
+                        increase_rows_selector = %s,
+                        expert_search_button_selector = %s
+                    WHERE name = %s
+                """, (
+                    data.get('tolerance', 4.0),
+                    data.get('nav_page_url', ''),
+                    data.get('expert_price_page_url', ''),
+                    data.get('date_selector', ''),
+                    data.get('time_selector', ''),
+                    data.get('nav_price_selector', ''),
+                    data.get('total_units_selector', ''),
+                    data.get('nav_search_button_selector', ''),
+                    data.get('securities_list_selector', ''),
+                    data.get('sellable_quantity_selector', ''),
+                    data.get('expert_price_selector', ''),
+                    data.get('increase_rows_selector', ''),
+                    data.get('expert_search_button_selector', ''),
+                    template_name
+                ))
+                
+                conn.commit()
+                message = f"Template '{template_name}' updated successfully"
+        finally:
+            conn.close()
+            
+    except json.JSONDecodeError:
+        message = "Invalid JSON format"
+    except psycopg2.Error as e:
+        err = getattr(e, 'pgerror', None) or str(e)
+        message = f"DB error: {err[:160]}"
+    except Exception as e:
+        message = f"Error: {str(e)[:160]}"
+    
+    return RedirectResponse(url=f"/admin?message={message}", status_code=302)
+
+@app.post("/admin/delete-template")
+async def delete_template(request: Request, template_name: str = Form()):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        return RedirectResponse(url="/", status_code=302)
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # Check if template exists
+            cur.execute("SELECT name FROM templates WHERE name = %s", (template_name,))
+            if not cur.fetchone():
+                return RedirectResponse(url="/admin?message=Template not found", status_code=302)
+            
+            # Delete template
+            cur.execute("DELETE FROM templates WHERE name = %s", (template_name,))
+            conn.commit()
+            
+            message = f"Template '{template_name}' deleted successfully"
+    except psycopg2.Error as e:
+        err = getattr(e, 'pgerror', None) or str(e)
+        message = f"Delete error: {err[:160]}"
+    finally:
+        conn.close()
+    
+    return RedirectResponse(url=f"/admin?message={message}", status_code=302)
+
+@app.get("/admin/template/{template_name}")
+async def get_template(request: Request, template_name: str):
+    try:
+        authenticate_admin(request)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    conn = get_db_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM templates WHERE name = %s", (template_name,))
+            template = cur.fetchone()
+            
+            if not template:
+                raise HTTPException(status_code=404, detail="Template not found")
+            
+            # Convert to dict and return
+            template_data = dict(template)
+            # Remove the name field from the data since it's used as identifier
+            template_data.pop('name', None)
+            
+            return template_data
+    finally:
+        conn.close()
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8001)

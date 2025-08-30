@@ -115,6 +115,30 @@
           <button type="submit">اعمال</button>
         </form>
       </div>
+      
+      <!-- Templates Table -->
+      <h3>تمپلیت‌های موجود</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>نام</th>
+            <th>تلورانس</th>
+            <th>عملیات</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in templates %}
+          <tr>
+            <td>{{ t['name'] }}</td>
+            <td>{{ t['tolerance'] }}%</td>
+            <td>
+              <button onclick="editTemplate('{{ t['name'] }}')" style="background: #007bff; color: white; border: none; padding: 5px 10px; margin: 2px; border-radius: 3px; cursor: pointer;">ویرایش</button>
+              <button onclick="deleteTemplate('{{ t['name'] }}')" style="background: #dc3545; color: white; border: none; padding: 5px 10px; margin: 2px; border-radius: 3px; cursor: pointer;">حذف</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
 
     <div class="card">
@@ -203,6 +227,40 @@
     </div>
   </div>
 
+  <!-- Edit Template Modal -->
+  <div id="editTemplateModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="position: relative; top: 5%; margin: auto; background: white; padding: 20px; width: 90%; max-width: 800px; border-radius: 8px; max-height: 90%; overflow-y: auto;">
+      <h3>ویرایش تمپلیت</h3>
+      <form id="editTemplateForm" action="/admin/edit-template" method="post">
+        <input type="hidden" id="editTemplateName" name="template_name">
+        <div class="row">
+          <label style="font-weight: bold; margin-bottom: 10px;">نام تمپلیت: <span id="templateNameDisplay"></span></label>
+        </div>
+        <div class="row">
+          <textarea id="editTemplateData" name="template_data" rows="20" style="width:100%; font-family: monospace; font-size: 12px;" placeholder='{"tolerance": 4.0, "nav_page_url": "...", ...}' required></textarea>
+        </div>
+        <div class="row" style="margin-top: 20px;">
+          <button type="submit" style="background: #28a745; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">ذخیره تغییرات</button>
+          <button type="button" onclick="closeEditTemplateModal()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">انصراف</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Template Modal -->
+  <div id="deleteTemplateModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="position: relative; top: 20%; margin: auto; background: white; padding: 20px; width: 400px; border-radius: 8px; text-align: center;">
+      <h3>تأیید حذف تمپلیت</h3>
+      <p>آیا مطمئن هستید که می‌خواهید تمپلیت "<span id="deleteTemplateName"></span>" را حذف کنید؟</p>
+      <p style="color: #dc3545; font-size: 14px;">⚠️ این عمل غیرقابل بازگشت است.</p>
+      <form id="deleteTemplateForm" action="/admin/delete-template" method="post" style="margin-top: 20px;">
+        <input type="hidden" id="deleteTemplateNameInput" name="template_name">
+        <button type="submit" style="background: #dc3545; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">بله، حذف کن</button>
+        <button type="button" onclick="closeDeleteTemplateModal()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; margin: 5px; border-radius: 4px; cursor: pointer;">انصراف</button>
+      </form>
+    </div>
+  </div>
+
   <script>
     function editFund(id, name, apiSymbol, navUrl, expertUrl, type) {
       document.getElementById('editFundId').value = id;
@@ -228,15 +286,78 @@
       document.getElementById('deleteModal').style.display = 'none';
     }
 
+    // Template functions
+    async function editTemplate(templateName) {
+      try {
+        // Fetch template data
+        const response = await fetch(`/admin/template/${templateName}`);
+        if (!response.ok) {
+          // If endpoint doesn't exist, create a default template structure
+          const defaultTemplate = {
+            tolerance: 4.0,
+            nav_page_url: "",
+            expert_price_page_url: "",
+            date_selector: "",
+            time_selector: "",
+            nav_price_selector: "",
+            total_units_selector: "",
+            nav_search_button_selector: "",
+            securities_list_selector: "",
+            sellable_quantity_selector: "",
+            expert_price_selector: "",
+            increase_rows_selector: "",
+            expert_search_button_selector: ""
+          };
+          
+          document.getElementById('editTemplateName').value = templateName;
+          document.getElementById('templateNameDisplay').textContent = templateName;
+          document.getElementById('editTemplateData').value = JSON.stringify(defaultTemplate, null, 2);
+        } else {
+          const templateData = await response.json();
+          document.getElementById('editTemplateName').value = templateName;
+          document.getElementById('templateNameDisplay').textContent = templateName;
+          document.getElementById('editTemplateData').value = JSON.stringify(templateData, null, 2);
+        }
+        
+        document.getElementById('editTemplateModal').style.display = 'block';
+      } catch (error) {
+        console.error('Error loading template:', error);
+        alert('خطا در بارگذاری تمپلیت');
+      }
+    }
+
+    function closeEditTemplateModal() {
+      document.getElementById('editTemplateModal').style.display = 'none';
+    }
+
+    function deleteTemplate(templateName) {
+      document.getElementById('deleteTemplateNameInput').value = templateName;
+      document.getElementById('deleteTemplateName').textContent = templateName;
+      document.getElementById('deleteTemplateModal').style.display = 'block';
+    }
+
+    function closeDeleteTemplateModal() {
+      document.getElementById('deleteTemplateModal').style.display = 'none';
+    }
+
     // Close modals when clicking outside
     window.onclick = function(event) {
       const editModal = document.getElementById('editModal');
       const deleteModal = document.getElementById('deleteModal');
+      const editTemplateModal = document.getElementById('editTemplateModal');
+      const deleteTemplateModal = document.getElementById('deleteTemplateModal');
+      
       if (event.target === editModal) {
         closeEditModal();
       }
       if (event.target === deleteModal) {
         closeDeleteModal();
+      }
+      if (event.target === editTemplateModal) {
+        closeEditTemplateModal();
+      }
+      if (event.target === deleteTemplateModal) {
+        closeDeleteTemplateModal();
       }
     }
   </script>

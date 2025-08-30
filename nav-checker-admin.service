@@ -1,0 +1,21 @@
+# Systemd service for NAV Checker Admin Panel
+# Place this in /etc/systemd/system/nav-checker-admin.service
+
+[Unit]
+Description=NAV Checker Admin Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/nav_assistant_project/python_server
+Environment=PATH=/usr/bin:/usr/local/bin
+Environment=PYTHONPATH=/root/nav_assistant_project/python_server
+ExecStart=/usr/bin/python3 -m uvicorn admin_panel:app --host 0.0.0.0 --port 8002 --reload
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

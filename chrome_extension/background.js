@@ -151,5 +151,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 			}
 		})();
 		return true; // async response
+	} else if (request?.type === 'NAVIGATE_TO_URL') {
+		// Handle navigation requests
+		(async () => {
+			try {
+				console.log(`Navigating to URL: ${request.url} for fund: ${request.fundName}`);
+				
+				// Get current tab
+				const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+				
+				// Navigate to the URL
+				await chrome.tabs.update(tab.id, { url: request.url });
+				
+				sendResponse({ ok: true, message: 'Navigation initiated' });
+			} catch (error) {
+				console.error('Navigation failed:', error);
+				sendResponse({ ok: false, error: error.message });
+			}
+		})();
+		return true; // async response
 	}
 });

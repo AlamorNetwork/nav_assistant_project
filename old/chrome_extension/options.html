@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>🐍 سبدگردان کاریزما - تنظیمات دستیار NAV</title>
+    <link rel="stylesheet" href="style.css">
+    <style> 
+        body { 
+            padding: 20px; 
+            max-width: 900px; 
+            margin: 40px auto; 
+            background: linear-gradient(135deg, var(--slytherin-dark) 0%, var(--slytherin-emerald) 50%, var(--slytherin-dark) 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            margin-bottom: 25px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .container h2 {
+            color: var(--slytherin-gold);
+            font-size: 28px;
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+        
+        .container h3 {
+            color: var(--slytherin-silver);
+            font-size: 20px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--slytherin-green);
+            padding-bottom: 10px;
+        }
+        
+        .container h4 {
+            color: var(--slytherin-gold);
+            font-size: 16px;
+            margin: 20px 0 10px 0;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            margin-bottom: 15px;
+            background: linear-gradient(145deg, var(--slytherin-gray), var(--slytherin-dark-gray));
+            border: 2px solid var(--border-color);
+            color: var(--slytherin-silver);
+        }
+        
+        textarea {
+            min-height: 120px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        
+        button {
+            margin: 5px;
+            min-width: 120px;
+        }
+        
+        #testConnectionBtn {
+            background: linear-gradient(145deg, var(--slytherin-gold), #b8941f);
+            color: var(--slytherin-black);
+            font-weight: bold;
+        }
+        
+        #addFundBtn {
+            background: linear-gradient(145deg, var(--slytherin-green), var(--slytherin-emerald));
+            color: var(--slytherin-silver);
+        }
+        
+        #saveConfigBtn {
+            background: linear-gradient(145deg, var(--slytherin-green), var(--slytherin-emerald));
+            color: var(--slytherin-silver);
+            font-weight: bold;
+            padding: 15px 30px;
+            font-size: 16px;
+        }
+        
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-align: center;
+            border-left: 4px solid;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+        
+        .row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        
+        .col {
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        hr {
+            border: none;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+            margin: 20px 0;
+        }
+        
+        label {
+            color: var(--slytherin-silver);
+            font-weight: 500;
+            margin-bottom: 5px;
+            display: block;
+        }
+        
+        #loginStatus {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: 500;
+            text-align: center;
+            border-left: 4px solid;
+        }
+    </style>
+</head>
+<body>
+    <div class="container"><h2>تنظیمات دستیار هوشمند NAV</h2></div>
+    <div class="container">
+        <h3>ورود مدیریت</h3>
+        <input type="text" id="loginUsername" placeholder="نام کاربری">
+        <input type="password" id="loginPassword" placeholder="کلمه عبور">
+        <button id="loginBtn">ورود</button>
+        <span id="loginStatus"></span>
+    </div>
+    <div class="container">
+        <h3>وضعیت اتصال به سرور</h3>
+        <p>برای اطمینان از اتصال به سرور پایتون، از این دکمه استفاده کنید.</p>
+        <button id="testConnectionBtn">⚡ تست اتصال</button>
+        <span id="connectionStatus"></span>
+    </div>
+    <div class="container">
+        <h3>۱. افزودن صندوق جدید</h3>
+        <input type="text" id="newFundName" placeholder="نام صندوق (مثال: کارا)">
+        <input type="text" id="newFundSymbol" placeholder="شناسه API صندوق (نام فارسی نماد)">
+        <select id="newFundType">
+            <option value="rayan">رایان هم‌افزار</option>
+            <option value="tadbir">تدبیر رایان پرداز</option>
+        </select>
+        <button id="addFundBtn">افزودن صندوق</button>
+    </div>
+    <div class="container">
+        <h3>۲. پیکربندی صندوق</h3>
+        <p>ابتدا صندوق مورد نظر را از لیست زیر انتخاب کنید:</p>
+        <select id="fundSelector"></select>
+        <hr>
+        <div style="display:flex; gap: 8px; align-items:center;">
+            <label>تمپلیت:</label>
+            <select id="templateSelector"></select>
+            <button id="applyTemplateBtn">اعمال تمپلیت</button>
+            <button id="applyFromDbBtn" title="استفاده از سلکتورهای ذخیره‌شده در دیتابیس برای صندوق انتخاب‌شده">از دیتابیس صندوق جاری</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin:8px 0;">
+            <input type="checkbox" id="testModeToggle">
+            <span>فعال کردن حالت تست برای این صندوق</span>
+        </label>
+        <h4>تنظیمات اصلی</h4>
+        <input type="text" id="tolerance" placeholder="مقدار تلورانس (ریال) - مثال: 4">
+        <h4>آدرس صفحات</h4>
+        <input type="text" id="navPageUrl" placeholder="آدرس صفحه وضعیت ارزش صندوق">
+        <input type="text" id="expertPageUrl" placeholder="آدرس صفحه قیمت کارشناسی">
+        <h4>سلکتورهای صفحه وضعیت ارزش صندوق</h4>
+        <input type="text" id="dateSelector" placeholder="سلکتور برای ستون تاریخ">
+        <input type="text" id="timeSelector" placeholder="سلکتور برای ستون زمان">
+        <input type="text" id="navPriceSelector" placeholder="سلکتور برای قیمت ابطال (NAV)">
+        <input type="text" id="totalUnitsSelector" placeholder="سلکتور برای تعداد کل واحدها">
+        <input type="text" id="navSearchBtnSelector" placeholder="سلکتور برای دکمه جستجو">
+        <h4>سلکتورهای صفحه قیمت کارشناسی</h4>
+        <input type="text" id="securitiesListSelector" placeholder="سلکتور برای لیست اوراق">
+        <input type="text" id="sellableQtySelector" placeholder="سلکتور نسبی برای مانده قابل فروش">
+        <input type="text" id="expertPriceSelector" placeholder="سلکتور نسبی برای قیمت کارشناسی">
+        <input type="text" id="increaseRowsSelector" placeholder="سلکتور برای افزایش تعداد ردیف‌ها">
+        <input type="text" id="expertSearchBtnSelector" placeholder="سلکتور برای دکمه جستجوی این صفحه">
+        <button id="saveConfigBtn">ذخیره پیکربندی</button>
+    </div>
+    <div id="status"></div>
+    <script src="options.js"></script>
+</body>
+</html>

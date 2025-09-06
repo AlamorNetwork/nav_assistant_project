@@ -8,6 +8,8 @@ let securityInfoContainer, selectedSecurityName, sellableQuantity, expertPrice, 
 let refreshSecurityDataBtn, testSelectorsBtn, testNotificationBtn;
 // Current security info elements (above logs)
 let currentSecurityInfoContainer, currentSecurityName, currentSellableQuantity, currentExpertPrice, currentRowNumber;
+// Test selector elements
+let testNavPageBtn, testExpertPageBtn, testSearchButtonBtn, testPageElementsBtn, testTableDataBtn, testAllSelectorsBtn, testResults;
 
 // --- نوتیفیکیشن دسکتاپ ---
 async function showDesktopNotification(options) {
@@ -365,6 +367,7 @@ async function setActiveFund() {
         
         // Set active fund (do NOT clear local storage to preserve selected security)
         await new Promise(resolve => chrome.storage.sync.set({ activeFund: selectedFund }, resolve));
+        await chrome.storage.local.set({ botActive: true });
         
         // Close existing bot-managed tabs first
         await closeNavAssistantTabs();
@@ -409,6 +412,41 @@ async function setActiveFund() {
             updateStatus(`ربات برای صندوق ${selectedFund} فعال شد. تب‌های NAV و Expert باز شدند.`, 'success');
             addLog(`NAV tab: ${navTabResponse.tabId}${expertTabResponse && expertTabResponse.tabId ? `, Expert tab: ${expertTabResponse.tabId}` : ''}`, 'success');
             
+            // Wait for tabs to load and then initialize bot workflow
+            setTimeout(async () => {
+                try {
+                    addLog('شروع پیکربندی اولیه تب‌ها...', 'info');
+                    
+                    // Send initialization message to NAV tab
+                    await chrome.runtime.sendMessage({
+                        type: 'SEND_MESSAGE_TO_TAB',
+                        tabId: navTabResponse.tabId,
+                        message: {
+                            type: 'INITIALIZE_NAV_TAB',
+                            fundName: selectedFund,
+                            isMainTab: true
+                        }
+                    });
+                    
+                    // Send initialization message to Expert tab if exists
+                    if (expertTabResponse && expertTabResponse.tabId) {
+                        await chrome.runtime.sendMessage({
+                            type: 'SEND_MESSAGE_TO_TAB',
+                            tabId: expertTabResponse.tabId,
+                            message: {
+                                type: 'INITIALIZE_EXPERT_TAB',
+                                fundName: selectedFund,
+                                isMainTab: false
+                            }
+                        });
+                    }
+                    
+                    addLog('پیکربندی اولیه تب‌ها کامل شد', 'success');
+                } catch (error) {
+                    addLog(`خطا در پیکربندی تب‌ها: ${error.message}`, 'error');
+                }
+            }, 3000); // Wait 3 seconds for tabs to load
+            
             // Show desktop notification for successful activation
             await showDesktopNotification({
                 id: `bot_activated_${selectedFund}_${Date.now()}`,
@@ -430,8 +468,9 @@ async function setActiveFund() {
 
 async function stopBot() {
     try {
-        // Remove active fund
+        // Remove active fund and deactivate bot
         await new Promise(resolve => chrome.storage.sync.remove('activeFund', resolve));
+        await chrome.storage.local.set({ botActive: false });
         fundSelector.value = '';
         
         // Close NAV assistant tabs
@@ -483,7 +522,19 @@ async function resetFund() {
             return; 
         }
         
-        // Do NOT clear local storage to preserve selected security and state
+        // Clear Expert page selections for fresh start
+        await chrome.storage.local.remove([
+            `selectedSecurity_${activeFund}`,
+            `selectedSecurityName_${activeFund}`,
+            `sellableQuantity_${activeFund}`,
+            `expertPrice_${activeFund}`,
+            `rowNumber_${activeFund}`,
+            `expertSearchClicked`,
+            `searchClickedTime`,
+            `needsExpertData_${activeFund}`
+        ]);
+        
+        addLog('🔄 Expert selections cleared for fresh start', 'info');
         
         // Close existing bot-managed tabs first
         await closeNavAssistantTabs();
@@ -696,13 +747,147 @@ async function testSelectors() {
     }
 }
 
+// Test bot functionality
+async function testBot() {
+    addLog('🚀 شروع تست کامل ربات...', 'info');
+    
+    try {
+        // Check if user is authenticated
+        const { authToken, activeFund } = await new Promise(resolve => 
+            chrome.storage.sync.get(['authToken', 'activeFund'], resolve)
+        );
+        
+        if (!authToken) {
+            addLog('❌ ابتدا وارد شوید', 'error');
+            return;
+        }
+        
+        if (!activeFund) {
+            addLog('❌ ابتدا یک صندوق را فعال کنید', 'error');
+            return;
+        }
+        
+        addLog(`✅ احراز هویت موفق - صندوق فعال: ${activeFund}`, 'success');
+        
+        // Test 1: Check API connection
+        addLog('تست 1: بررسی اتصال به API...', 'info');
+        try {
+            const response = await fetch(`${API_BASE_URL}/configurations/${activeFund}`, {
+                headers: { 'token': authToken }
+            });
+            
+            if (response.ok) {
+                const config = await response.json();
+                addLog(`✅ اتصال API موفق - تنظیمات دریافت شد`, 'success');
+                addLog(`📊 URL NAV: ${config.nav_page_url ? '✅' : '❌'}`, 'info');
+                addLog(`📊 URL Expert: ${config.expert_price_page_url ? '✅' : '❌'}`, 'info');
+            } else {
+                addLog(`❌ خطای API: ${response.status}`, 'error');
+                return;
+            }
+        } catch (error) {
+            addLog(`❌ خطای اتصال API: ${error.message}`, 'error');
+            return;
+        }
+        
+        // Test 2: Check active tabs
+        addLog('تست 2: بررسی تب‌های فعال...', 'info');
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'GET_ACTIVE_TAB' });
+            if (response && response.tab) {
+                addLog(`✅ تب فعال: ${response.tab.title}`, 'success');
+                addLog(`📊 URL: ${response.tab.url}`, 'info');
+            } else {
+                addLog('❌ تب فعال یافت نشد', 'error');
+            }
+        } catch (error) {
+            addLog(`❌ خطای بررسی تب: ${error.message}`, 'error');
+        }
+        
+        // Test 3: Send test data to server
+        addLog('تست 3: ارسال داده تست به سرور...', 'info');
+        try {
+            const testData = {
+                fund_name: activeFund,
+                nav_on_page: 1000.50,
+                total_units: 1000000,
+                sellable_quantity: 500000,
+                expert_price: 1005.25,
+                board_price: 1002.75
+            };
+            
+            const response = await fetch(`${API_BASE_URL}/check-nav`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'token': authToken
+                },
+                body: JSON.stringify(testData)
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                addLog(`✅ داده تست ارسال شد`, 'success');
+                addLog(`📊 نتیجه: ${result.status}`, 'info');
+                if (result.adjustment_needed) {
+                    addLog(`📊 قیمت پیشنهادی: ${result.suggested_price}`, 'info');
+                }
+            } else {
+                addLog(`❌ خطای ارسال داده: ${response.status}`, 'error');
+            }
+        } catch (error) {
+            addLog(`❌ خطای ارسال داده: ${error.message}`, 'error');
+        }
+        
+        // Test 4: Check content script communication
+        addLog('تست 4: بررسی ارتباط با Content Script...', 'info');
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'GET_ACTIVE_TAB' });
+            if (response && response.tab) {
+                const contentResponse = await chrome.tabs.sendMessage(response.tab.id, { 
+                    action: 'TEST_COMMUNICATION' 
+                });
+                
+                if (contentResponse) {
+                    addLog(`✅ ارتباط با Content Script موفق`, 'success');
+                    addLog(`📊 پاسخ: ${contentResponse.message}`, 'info');
+                } else {
+                    addLog('❌ Content Script پاسخ نداد', 'error');
+                }
+            }
+        } catch (error) {
+            addLog(`❌ خطای ارتباط با Content Script: ${error.message}`, 'error');
+        }
+        
+        addLog('🎉 تست کامل ربات تمام شد!', 'success');
+        
+    } catch (error) {
+        addLog(`❌ خطای کلی در تست ربات: ${error.message}`, 'error');
+    }
+}
+
 async function testNotifications() {
     addLog('🧪 شروع تست نوتیفیکیشن‌های دسکتاپ...', 'info');
     
     try {
+        // Check if notifications are supported
+        if (!chrome.notifications) {
+            addLog('❌ Notifications API غیر قابل دسترس', 'error');
+            return;
+        }
+        
+        // Check notification permission
+        const permission = await chrome.notifications.getPermissionLevel();
+        addLog(`📋 سطح مجوز فعلی: ${permission}`, 'info');
+        
+        if (permission === 'denied') {
+            addLog('❌ مجوز نوتیفیکیشن رد شده - لطفاً در تنظیمات Chrome فعال کنید', 'error');
+            return;
+        }
+        
         // Test 1: Basic notification
         addLog('تست 1: نوتیفیکیشن ساده', 'info');
-        await showDesktopNotification({
+        const result1 = await showDesktopNotification({
             id: 'test_basic',
             title: '🧪 تست دستیار NAV',
             message: 'این یک پیام تست ساده است',
@@ -710,10 +895,16 @@ async function testNotifications() {
             requireInteraction: false
         });
         
+        if (result1) {
+            addLog(`✅ نوتیفیکیشن ساده ایجاد شد: ${result1}`, 'success');
+        } else {
+            addLog('❌ نوتیفیکیشن ساده شکست خورد', 'error');
+        }
+        
         // Test 2: Adjustment notification with buttons (after 2 seconds)
         setTimeout(async () => {
             addLog('تست 2: نوتیفیکیشن تعدیل با دکمه‌ها', 'info');
-            await showDesktopNotification({
+            const result2 = await showDesktopNotification({
                 id: 'test_adjustment',
                 title: '🚨 تست تعدیل NAV',
                 message: 'صندوق تست: قیمت پیشنهادی 1250.75',
@@ -724,6 +915,12 @@ async function testNotifications() {
                     { text: 'بستن' }
                 ]
             });
+            
+            if (result2) {
+                addLog(`✅ نوتیفیکیشن تعدیل ایجاد شد: ${result2}`, 'success');
+            } else {
+                addLog('❌ نوتیفیکیشن تعدیل شکست خورد', 'error');
+            }
         }, 2000);
         
         // Test 3: Stale NAV notification (after 4 seconds)
@@ -794,6 +991,15 @@ function initializeDOMElements() {
     currentExpertPrice = document.getElementById('currentExpertPrice');
     currentRowNumber = document.getElementById('currentRowNumber');
     
+    // Test selector elements
+    testNavPageBtn = document.getElementById('testNavPageBtn');
+    testExpertPageBtn = document.getElementById('testExpertPageBtn');
+    testSearchButtonBtn = document.getElementById('testSearchButtonBtn');
+    testPageElementsBtn = document.getElementById('testPageElementsBtn');
+    testTableDataBtn = document.getElementById('testTableDataBtn');
+    testAllSelectorsBtn = document.getElementById('testAllSelectorsBtn');
+    testResults = document.getElementById('testResults');
+    
     // Login elements
     loginScreen = document.getElementById('loginScreen');
     mainInterface = document.getElementById('mainInterface');
@@ -844,6 +1050,404 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
+// --- Test Functions ---
+function updateTestResults(result) {
+    if (testResults) {
+        testResults.textContent = result;
+        testResults.scrollTop = testResults.scrollHeight;
+    }
+}
+
+function appendTestResults(result) {
+    if (testResults) {
+        testResults.textContent += result;
+        testResults.scrollTop = testResults.scrollHeight;
+    }
+}
+
+function smartUpdateTestResults(result) {
+    // If this is part of testAllSelectors, append. Otherwise, replace.
+    if (testResults && testResults.textContent.includes('تست همه سلکتورها')) {
+        appendTestResults(result);
+    } else {
+        updateTestResults(result);
+    }
+}
+
+async function testPageType(pageType) {
+    smartUpdateTestResults(`🔍 تست ${pageType} شروع شد...\n`);
+    
+    try {
+        // Get current active tab
+        const tabs = await new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+        if (!tabs || tabs.length === 0) {
+            smartUpdateTestResults('❌ تب فعالی یافت نشد');
+            return;
+        }
+        
+        const tabId = tabs[0].id;
+        const url = tabs[0].url;
+        
+        smartUpdateTestResults(`📄 URL فعلی: ${url}\n`);
+        
+        // Execute test script in the active tab
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: function(pageType) {
+                const currentUrl = window.location.href.toLowerCase();
+                
+                // Check page type
+                const isNavPage = currentUrl.includes('fund.do') || currentUrl.includes('navlist');
+                const isExpertPage = currentUrl.includes('adjustedip') || currentUrl.includes('expert');
+                
+                let result = `🌐 صفحه ${pageType} - تحلیل URL:\n`;
+                result += `URL: ${window.location.href}\n`;
+                result += `NAV صفحه: ${isNavPage ? '✅' : '❌'}\n`;
+                result += `Expert صفحه: ${isExpertPage ? '✅' : '❌'}\n\n`;
+                
+                if (pageType === 'NAV' && isNavPage) {
+                    result += `📊 آنالیز صفحه NAV:\n`;
+                    
+                    // Find forms
+                    const forms = document.querySelectorAll('form');
+                    result += `تعداد فرم‌ها: ${forms.length}\n`;
+                    
+                    // Find tables
+                    const tables = document.querySelectorAll('table');
+                    result += `تعداد جداول: ${tables.length}\n`;
+                    
+                    // Find select elements for increasing rows
+                    const selects = document.querySelectorAll('select');
+                    result += `تعداد dropdown ها: ${selects.length}\n`;
+                    
+                    selects.forEach((select, i) => {
+                        const options = select.querySelectorAll('option');
+                        result += `  Dropdown ${i+1}: ${options.length} گزینه\n`;
+                        if (options.length > 1) {
+                            result += `    Options: ${Array.from(options).map(opt => opt.text || opt.value).join(', ')}\n`;
+                        }
+                    });
+                    
+                } else if (pageType === 'Expert' && isExpertPage) {
+                    result += `🔍 آنالیز صفحه Expert:\n`;
+                    
+                    // Find forms
+                    const forms = document.querySelectorAll('form');
+                    result += `تعداد فرم‌ها: ${forms.length}\n`;
+                    
+                    // Find input fields
+                    const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+                    result += `تعداد فیلدهای متنی: ${inputs.length}\n`;
+                    
+                    // Find dropdown for securities
+                    const selects = document.querySelectorAll('select');
+                    result += `تعداد dropdown ها: ${selects.length}\n`;
+                    
+                    selects.forEach((select, i) => {
+                        const options = select.querySelectorAll('option');
+                        result += `  Dropdown ${i+1}: ${options.length} گزینه\n`;
+                    });
+                    
+                } else {
+                    result += `⚠️ صفحه مطابق نیست. انتظار ${pageType} صفحه بود.\n`;
+                }
+                
+                return result;
+            },
+            args: [pageType]
+        });
+        
+        if (results && results[0] && results[0].result) {
+            smartUpdateTestResults(results[0].result);
+        } else {
+            smartUpdateTestResults('❌ خطا در اجرای تست');
+        }
+        
+    } catch (error) {
+        smartUpdateTestResults(`❌ خطا: ${error.message}`);
+    }
+}
+
+async function testSearchButton() {
+    smartUpdateTestResults('🔎 تست دکمه جستجو شروع شد...\n');
+    
+    try {
+        const tabs = await new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+        if (!tabs || tabs.length === 0) {
+            smartUpdateTestResults('❌ تب فعالی یافت نشد');
+            return;
+        }
+        
+        const tabId = tabs[0].id;
+        
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: function() {
+                let result = '🔍 جستجوی دکمه‌های submit:\n\n';
+                
+                // Find all submit buttons
+                const submitButtons = document.querySelectorAll('input[type="submit"]');
+                result += `تعداد دکمه‌های submit: ${submitButtons.length}\n`;
+                
+                submitButtons.forEach((btn, i) => {
+                    const value = btn.value || '';
+                    const id = btn.id || '';
+                    const className = btn.className || '';
+                    const form = btn.closest('form');
+                    
+                    result += `\n${i+1}. VALUE="${value}"\n`;
+                    result += `   ID="${id}"\n`;
+                    result += `   CLASS="${className}"\n`;
+                    result += `   در فرم: ${form ? 'بله' : 'خیر'}\n`;
+                    
+                    if (form) {
+                        const formAction = form.action || '';
+                        const formMethod = form.method || '';
+                        result += `   Form action: ${formAction}\n`;
+                        result += `   Form method: ${formMethod}\n`;
+                    }
+                });
+                
+                // Test finding search button
+                result += '\n🎯 تست پیدا کردن دکمه جستجو:\n';
+                
+                let searchButton = document.querySelector('input[type="submit"][value*="جستجو"]');
+                if (!searchButton) {
+                    searchButton = document.querySelector('input[type="submit"]');
+                }
+                
+                if (searchButton) {
+                    result += `✅ دکمه پیدا شد: "${searchButton.value}"\n`;
+                    result += `ID: ${searchButton.id}\n`;
+                    result += `Class: ${searchButton.className}\n`;
+                    
+                    // Test click functionality
+                    result += '\n⚡ تست کلیک:\n';
+                    try {
+                        const clickEvent = new MouseEvent('click', {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window
+                        });
+                        
+                        const clickSuccess = searchButton.dispatchEvent(clickEvent);
+                        result += `Click event: ${clickSuccess ? 'موفق' : 'ناموفق'}\n`;
+                        
+                        // Check if in form
+                        const form = searchButton.closest('form');
+                        if (form) {
+                            result += `Form submit test: آماده برای submit\n`;
+                        }
+                        
+                    } catch (e) {
+                        result += `❌ خطای کلیک: ${e.message}\n`;
+                    }
+                    
+                } else {
+                    result += '❌ هیچ دکمه جستجویی پیدا نشد\n';
+                    
+                    // Show all clickable elements
+                    const clickables = document.querySelectorAll('button, input[type="button"], input[type="submit"], a[onclick]');
+                    result += `\nتمام المنت‌های کلیک‌پذیر (${clickables.length}):\n`;
+                    
+                    clickables.forEach((el, i) => {
+                        const text = el.innerText || el.value || el.textContent || '';
+                        const tag = el.tagName.toLowerCase();
+                        const type = el.type || '';
+                        result += `${i+1}. ${tag}${type ? `[${type}]` : ''}: "${text.trim()}"\n`;
+                    });
+                }
+                
+                return result;
+            }
+        });
+        
+        if (results && results[0] && results[0].result) {
+            smartUpdateTestResults(results[0].result);
+        } else {
+            smartUpdateTestResults('❌ خطا در اجرای تست');
+        }
+        
+    } catch (error) {
+        smartUpdateTestResults(`❌ خطا: ${error.message}`);
+    }
+}
+
+async function testPageElements() {
+    smartUpdateTestResults('📋 تست المنت‌های صفحه شروع شد...\n');
+    
+    try {
+        const tabs = await new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+        if (!tabs || tabs.length === 0) {
+            smartUpdateTestResults('❌ تب فعالی یافت نشد');
+            return;
+        }
+        
+        const tabId = tabs[0].id;
+        
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: function() {
+                let result = '📋 آنالیز المنت‌های صفحه:\n\n';
+                
+                // Basic page info
+                result += `📄 عنوان صفحه: ${document.title}\n`;
+                result += `🌐 URL: ${window.location.href}\n\n`;
+                
+                // Forms
+                const forms = document.querySelectorAll('form');
+                result += `📝 فرم‌ها (${forms.length}):\n`;
+                forms.forEach((form, i) => {
+                    result += `  ${i+1}. Action: ${form.action || 'ندارد'}\n`;
+                    result += `     Method: ${form.method || 'GET'}\n`;
+                    result += `     Elements: ${form.elements.length}\n`;
+                });
+                result += '\n';
+                
+                // Tables
+                const tables = document.querySelectorAll('table');
+                result += `📊 جداول (${tables.length}):\n`;
+                tables.forEach((table, i) => {
+                    const rows = table.querySelectorAll('tr');
+                    const headers = table.querySelectorAll('th');
+                    result += `  ${i+1}. ردیف‌ها: ${rows.length}, سرفصل‌ها: ${headers.length}\n`;
+                });
+                result += '\n';
+                
+                // Select dropdowns
+                const selects = document.querySelectorAll('select');
+                result += `🔽 Dropdown ها (${selects.length}):\n`;
+                selects.forEach((select, i) => {
+                    const options = select.querySelectorAll('option');
+                    result += `  ${i+1}. ID: ${select.id || 'ندارد'}\n`;
+                    result += `     Name: ${select.name || 'ندارد'}\n`;
+                    result += `     گزینه‌ها: ${options.length}\n`;
+                    if (options.length <= 10) {
+                        result += `     Values: ${Array.from(options).map(opt => opt.value || opt.text).join(', ')}\n`;
+                    }
+                });
+                result += '\n';
+                
+                // Input fields
+                const inputs = document.querySelectorAll('input');
+                result += `🎛️ فیلدهای ورودی (${inputs.length}):\n`;
+                const inputTypes = {};
+                inputs.forEach(input => {
+                    const type = input.type || 'text';
+                    inputTypes[type] = (inputTypes[type] || 0) + 1;
+                });
+                Object.entries(inputTypes).forEach(([type, count]) => {
+                    result += `  ${type}: ${count}\n`;
+                });
+                
+                return result;
+            }
+        });
+        
+        if (results && results[0] && results[0].result) {
+            smartUpdateTestResults(results[0].result);
+        } else {
+            smartUpdateTestResults('❌ خطا در اجرای تست');
+        }
+        
+    } catch (error) {
+        smartUpdateTestResults(`❌ خطا: ${error.message}`);
+    }
+}
+
+async function testTableData() {
+    smartUpdateTestResults('📊 تست دیتای جدول شروع شد...\n');
+    
+    try {
+        const tabs = await new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, resolve));
+        if (!tabs || tabs.length === 0) {
+            smartUpdateTestResults('❌ تب فعالی یافت نشد');
+            return;
+        }
+        
+        const tabId = tabs[0].id;
+        
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: function() {
+                let result = '📊 آنالیز دیتای جداول:\n\n';
+                
+                const tables = document.querySelectorAll('table');
+                
+                if (tables.length === 0) {
+                    result += '❌ هیچ جدولی پیدا نشد\n';
+                    return result;
+                }
+                
+                tables.forEach((table, tableIndex) => {
+                    result += `📋 جدول ${tableIndex + 1}:\n`;
+                    
+                    const headers = table.querySelectorAll('th');
+                    const rows = table.querySelectorAll('tr');
+                    
+                    result += `  سرفصل‌ها (${headers.length}): `;
+                    if (headers.length > 0) {
+                        result += Array.from(headers).map(th => th.textContent.trim()).join(' | ');
+                    } else {
+                        result += 'ندارد';
+                    }
+                    result += '\n';
+                    
+                    result += `  تعداد ردیف‌ها: ${rows.length}\n`;
+                    
+                    // Show first few data rows
+                    const dataRows = Array.from(rows).filter(row => !row.querySelector('th'));
+                    result += `  ردیف‌های دیتا: ${dataRows.length}\n`;
+                    
+                    if (dataRows.length > 0) {
+                        result += '  نمونه دیتا (5 ردیف اول):\n';
+                        dataRows.slice(0, 5).forEach((row, i) => {
+                            const cells = row.querySelectorAll('td');
+                            const cellData = Array.from(cells).map(cell => cell.textContent.trim()).join(' | ');
+                            result += `    ${i+1}: ${cellData.substring(0, 100)}${cellData.length > 100 ? '...' : ''}\n`;
+                        });
+                    }
+                    
+                    result += '\n';
+                });
+                
+                return result;
+            }
+        });
+        
+        if (results && results[0] && results[0].result) {
+            smartUpdateTestResults(results[0].result);
+        } else {
+            smartUpdateTestResults('❌ خطا در اجرای تست');
+        }
+        
+    } catch (error) {
+        smartUpdateTestResults(`❌ خطا: ${error.message}`);
+    }
+}
+
+async function testAllSelectors() {
+    updateTestResults('🔍 تست همه سلکتورها شروع شد...\n\n');
+    
+    // Run all tests in sequence with append
+    appendTestResults('==== تست صفحه NAV ====\n');
+    await testPageType('NAV');
+    
+    appendTestResults('\n' + '='.repeat(50) + '\n');
+    appendTestResults('==== تست دکمه جستجو ====\n');
+    await testSearchButton();
+    
+    appendTestResults('\n' + '='.repeat(50) + '\n');
+    appendTestResults('==== تست المنت‌های صفحه ====\n');
+    await testPageElements();
+    
+    appendTestResults('\n' + '='.repeat(50) + '\n');
+    appendTestResults('==== تست دیتای جدول ====\n');
+    await testTableData();
+    
+    appendTestResults('\n✅ همه تست‌ها تمام شد!\n');
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize DOM elements first
     initializeDOMElements();
@@ -886,6 +1490,17 @@ function setupEventListeners() {
     
     // Test notification event
     if (testNotificationBtn) testNotificationBtn.addEventListener('click', testNotifications);
+    
+    // Test bot event
+    if (testBotBtn) testBotBtn.addEventListener('click', testBot);
+    
+    // Test selector events
+    if (testNavPageBtn) testNavPageBtn.addEventListener('click', () => testPageType('NAV'));
+    if (testExpertPageBtn) testExpertPageBtn.addEventListener('click', () => testPageType('Expert'));
+    if (testSearchButtonBtn) testSearchButtonBtn.addEventListener('click', testSearchButton);
+    if (testPageElementsBtn) testPageElementsBtn.addEventListener('click', testPageElements);
+    if (testTableDataBtn) testTableDataBtn.addEventListener('click', testTableData);
+    if (testAllSelectorsBtn) testAllSelectorsBtn.addEventListener('click', testAllSelectors);
     
     // Adjustment events
     if (confirmAdjustedBtn) {

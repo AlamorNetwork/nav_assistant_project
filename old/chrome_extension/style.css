@@ -1,0 +1,441 @@
+/* ===== SLYTHERIN THEME - NAV ASSISTANT ===== */
+:root {
+    /* Slytherin Color Palette */
+    --slytherin-dark: #0a1a0a;
+    --slytherin-green: #2A623D;
+    --slytherin-light-green: #4a7c59;
+    --slytherin-emerald: #1a472a;
+    --slytherin-silver: #c0c0c0;
+    --slytherin-gold: #d4af37;
+    --slytherin-black: #000000;
+    --slytherin-dark-gray: #1a1a1a;
+    --slytherin-gray: #2d2d2d;
+    --slytherin-light-gray: #4a4a4a;
+    
+    /* Semantic Colors */
+    --primary-color: var(--slytherin-green);
+    --secondary-color: var(--slytherin-silver);
+    --success-color: #48bb78;
+    --error-color: #e53e3e;
+    --warning-color: var(--slytherin-gold);
+    --border-color: var(--slytherin-light-green);
+    --text-color: var(--slytherin-silver);
+    --background-color: var(--slytherin-dark);
+    --card-background: var(--slytherin-emerald);
+}
+
+/* ===== GLOBAL STYLES ===== */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, var(--slytherin-dark) 0%, var(--slytherin-emerald) 50%, var(--slytherin-dark) 100%);
+    color: var(--text-color);
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Snake Pattern Background */
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+        radial-gradient(circle at 20% 30%, rgba(42, 98, 61, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(26, 71, 42, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 80%, rgba(74, 124, 89, 0.05) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: -1;
+}
+
+/* ===== CONTAINER STYLES ===== */
+.container {
+    background: linear-gradient(145deg, var(--card-background), var(--slytherin-dark-gray));
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 10px;
+    box-shadow: 
+        0 8px 32px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(192, 192, 192, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(192, 192, 192, 0.1), transparent);
+    transition: left 0.5s ease;
+}
+
+.container:hover::before {
+    left: 100%;
+}
+
+/* ===== TYPOGRAPHY ===== */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--slytherin-silver);
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    margin-bottom: 15px;
+    position: relative;
+}
+
+h3::after {
+    content: '🐍';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.2em;
+    opacity: 0.7;
+}
+
+/* ===== FORM ELEMENTS ===== */
+input, select, textarea {
+    background: linear-gradient(145deg, var(--slytherin-gray), var(--slytherin-dark-gray));
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text-color);
+    font-size: 14px;
+    transition: all 0.3s ease;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--slytherin-gold);
+    box-shadow: 
+        0 0 0 3px rgba(212, 175, 55, 0.2),
+        inset 0 2px 4px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px);
+}
+
+input::placeholder {
+    color: var(--slytherin-light-gray);
+    opacity: 0.7;
+}
+
+/* ===== BUTTONS ===== */
+button {
+    background: linear-gradient(145deg, var(--primary-color), var(--slytherin-emerald));
+    color: var(--slytherin-silver);
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 
+        0 4px 15px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(192, 192, 192, 0.2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(192, 192, 192, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        0 6px 20px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(192, 192, 192, 0.3);
+    background: linear-gradient(145deg, var(--slytherin-light-green), var(--primary-color));
+}
+
+button:hover::before {
+    left: 100%;
+}
+
+button:active {
+    transform: translateY(0);
+    box-shadow: 
+        0 2px 10px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(192, 192, 192, 0.1);
+}
+
+/* Special Button Styles */
+#loginBtn {
+    background: linear-gradient(145deg, var(--slytherin-gold), #b8941f);
+    color: var(--slytherin-black);
+    font-weight: bold;
+    font-size: 16px;
+    padding: 15px 30px;
+    border-radius: 25px;
+    box-shadow: 
+        0 6px 20px rgba(212, 175, 55, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+#loginBtn:hover {
+    background: linear-gradient(145deg, #e6c200, var(--slytherin-gold));
+    box-shadow: 
+        0 8px 25px rgba(212, 175, 55, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+#stopBotBtn {
+    background: linear-gradient(145deg, #dc3545, #c82333);
+    color: white;
+}
+
+#resetFundBtn {
+    background: linear-gradient(145deg, var(--slytherin-silver), #a8a8a8);
+    color: var(--slytherin-black);
+}
+
+#logoutBtn {
+    background: linear-gradient(145deg, #6c757d, #5a6268);
+    color: white;
+}
+
+/* ===== SELECT ELEMENTS ===== */
+select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23c0c0c0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 16px;
+    padding-right: 40px;
+    appearance: none;
+}
+
+/* ===== STATUS MESSAGES ===== */
+#status, #loginStatus {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 10px 0;
+    font-weight: 500;
+    text-align: center;
+    border-left: 4px solid;
+    background: rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+#status.success, #loginStatus.success {
+    background: linear-gradient(145deg, rgba(72, 187, 120, 0.2), rgba(56, 178, 172, 0.2));
+    border-left-color: var(--success-color);
+    color: #9ae6b4;
+}
+
+#status.error, #loginStatus.error {
+    background: linear-gradient(145deg, rgba(229, 62, 62, 0.2), rgba(197, 48, 48, 0.2));
+    border-left-color: var(--error-color);
+    color: #feb2b2;
+}
+
+#status.neutral, #loginStatus.neutral {
+    background: linear-gradient(145deg, rgba(192, 192, 192, 0.2), rgba(160, 160, 160, 0.2));
+    border-left-color: var(--secondary-color);
+    color: var(--slytherin-silver);
+}
+
+/* ===== LOG CONTAINER ===== */
+.log-container {
+    background: linear-gradient(145deg, var(--slytherin-black), var(--slytherin-dark-gray));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.log-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.log-header h4 {
+    margin: 0;
+    color: var(--slytherin-gold);
+    font-size: 16px;
+}
+
+#log-box {
+    background: linear-gradient(145deg, var(--slytherin-black), #1a1a1a);
+    color: var(--slytherin-silver);
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    height: 150px;
+    overflow-y: auto;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid var(--slytherin-gray);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+#log-box::-webkit-scrollbar {
+    width: 8px;
+}
+
+#log-box::-webkit-scrollbar-track {
+    background: var(--slytherin-dark-gray);
+    border-radius: 4px;
+}
+
+#log-box::-webkit-scrollbar-thumb {
+    background: var(--slytherin-green);
+    border-radius: 4px;
+}
+
+#log-box::-webkit-scrollbar-thumb:hover {
+    background: var(--slytherin-light-green);
+}
+
+.log-entry {
+    margin: 0 0 8px 0;
+    padding: 4px 0;
+    border-left: 2px solid transparent;
+    padding-left: 8px;
+}
+
+.log-entry.error {
+    color: #f56565;
+    border-left-color: #f56565;
+    background: rgba(245, 101, 101, 0.1);
+}
+
+.log-entry.success {
+    color: #48bb78;
+    border-left-color: #48bb78;
+    background: rgba(72, 187, 120, 0.1);
+}
+
+.log-entry.warn {
+    color: var(--slytherin-gold);
+    border-left-color: var(--slytherin-gold);
+    background: rgba(212, 175, 55, 0.1);
+}
+
+/* ===== CONTROLS SECTION ===== */
+.controls {
+    display: flex;
+    gap: 8px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+}
+
+.controls button {
+    flex: 1;
+    min-width: 120px;
+    font-size: 12px;
+    padding: 10px 12px;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes snakeGlow {
+    0%, 100% { box-shadow: 0 0 5px rgba(42, 98, 61, 0.5); }
+    50% { box-shadow: 0 0 20px rgba(42, 98, 61, 0.8); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.container {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+@media (max-width: 400px) {
+    .container {
+        margin: 5px;
+        padding: 15px;
+    }
+    
+    .controls {
+        flex-direction: column;
+    }
+    
+    .controls button {
+        min-width: auto;
+    }
+    
+    h3::after {
+        display: none;
+    }
+}
+
+/* ===== SPECIAL EFFECTS ===== */
+/* Glowing effect for active elements */
+input:focus, select:focus, textarea:focus {
+    animation: snakeGlow 2s ease-in-out infinite;
+}
+
+/* Hover effects for interactive elements */
+.container:hover {
+    transform: translateY(-2px);
+    transition: transform 0.3s ease;
+}
+
+/* Custom scrollbar for the entire popup */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--slytherin-dark-gray);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--slytherin-green);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--slytherin-light-green);
+}
+
+/* ===== MAGICAL EFFECTS ===== */
+/* Sparkle effect for important elements */
+@keyframes sparkle {
+    0%, 100% { opacity: 0; transform: scale(0); }
+    50% { opacity: 1; transform: scale(1); }
+}
+
+.container::after {
+    content: '✨';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 12px;
+    opacity: 0.3;
+    animation: sparkle 3s ease-in-out infinite;
+}
+
+/* ===== DARK MODE ENHANCEMENTS ===== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --slytherin-dark: #000000;
+        --slytherin-emerald: #0d2b1a;
+        --slytherin-gray: #1a1a1a;
+    }
+}

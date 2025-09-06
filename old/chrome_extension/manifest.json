@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "🐍 سبدگردان کاریزما - دستیار NAV",
+  "version": "1.0.0",
+  "description": "اکستنشن مدیریت صندوق سبدگردان کاریزما - نظارت هوشمند بر NAV",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "https://*.irplatforme.ir/*"
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
+
+
+
